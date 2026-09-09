@@ -1,4 +1,6 @@
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -221,3 +223,50 @@ def test_template_controls_map_declares_every_used_id() -> None:
     declared = set(re.findall(r'"([^"]+)"', block.group(1)))
     used = set(re.findall(r'controls\["([^"]+)"\]', source))
     assert used <= declared, f"ids usados sem declaração no mapa controls: {sorted(used - declared)}"
+
+
+def test_encode_rows_stores_stripped_text_so_padding_cannot_split_a_group(
+    tmp_path: Path,
+) -> None:
+    path = write_csv(
+        tmp_path,
+        'review,sentiment\n"  padded review  ",positive\n"padded review",positive\n',
+    )
+
+    raw_rows, _ = load_csv(path, "review", "sentiment")
+    rows, _ = encode_rows(raw_rows, "review", "sentiment", "positive", "negative")
+
+    assert rows == [("padded review", 1), ("padded review", 1)]
+    unique_rows, duplicate_stats = deduplicate_rows(rows)
+    assert unique_rows == [("padded review", 1)]
+    assert duplicate_stats == {"duplicate_groups": 1, "duplicate_rows": 1}
+
+
+def test_profile_rows_rejects_a_single_class_corpus() -> None:
+    with pytest.raises(ValueError, match="nenhuma linha válida da classe positive"):
+        profile_rows([("only negative text", 0)])
+
+
+def test_generated_report_renders_under_a_stubbed_dom(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node não está disponível para o teste de renderização")
+    rows = ["review,sentiment"]
+    rows.extend(f'"excellent warm story {index}",positive' for index in range(20))
+    rows.extend(f'"awful cold story {index}",negative' for index in range(20))
+    source = write_csv(tmp_path, "\n".join(rows) + "\n")
+    output = tmp_path / "smoke.html"
+
+    assert main([
+        "--input", str(source),
+        "--text-column", "review",
+        "--label-column", "sentiment",
+        "--positive-label", "positive",
+        "--negative-label", "negative",
+        "--output", str(output),
+    ]) == 0
+
+    result = subprocess.run(
+        [node, "tests/report_smoke.js", str(output)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -27,6 +27,7 @@ from sklearn.pipeline import Pipeline
 PROTECTED_NEGATIONS = {"not", "no", "nor", "never"}
 STOPWORDS = set(ENGLISH_STOP_WORDS) - PROTECTED_NEGATIONS
 HTML_TAG = re.compile(r"<[^>]+>")
+HTML_BREAK = re.compile(r"<br\s*/?\s*>", re.IGNORECASE)
 NON_LETTER = re.compile(r"[^a-z\s]")
 WHITESPACE = re.compile(r"\s+")
 
@@ -88,7 +89,7 @@ def encode_rows(
         if not label:
             missing_label += 1
             continue
-        encoded.append((row[text_column], int(label == positive_label)))
+        encoded.append((text, int(label == positive_label)))
     return encoded, {"missing_text": missing_text, "missing_label": missing_label}
 
 
@@ -114,6 +115,8 @@ def profile_rows(rows: list[tuple[str, int]]) -> dict[str, object]:
     samples = {}
     for label, name in ((0, "negative"), (1, "positive")):
         class_texts = [text for text, row_label in rows if row_label == label]
+        if not class_texts:
+            raise ValueError(f"nenhuma linha válida da classe {name}")
         class_characters = [len(text) for text in class_texts]
         class_words = [len(text.split()) for text in class_texts]
         by_class[name] = {
@@ -128,7 +131,7 @@ def profile_rows(rows: list[tuple[str, int]]) -> dict[str, object]:
             "negative": labels[0],
             "positive": labels[1],
         },
-        "html_rows": sum("<br" in text.lower() for text, _ in rows),
+        "html_rows": sum(bool(HTML_BREAK.search(text)) for text, _ in rows),
         "characters": {
             "mean": round(fmean(character_lengths), 2),
             "median": median(character_lengths),

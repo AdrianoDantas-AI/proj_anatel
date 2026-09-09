@@ -5,45 +5,153 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Análise de Sentimentos IMDb</title>
   <style>
-    :root { color-scheme: dark; --bg:#08111f; --panel:#111d30; --text:#edf4ff; --muted:#9fb0c8; --positive:#39d98a; --negative:#ff6b78; --accent:#65a8ff; }
+    :root {
+      color-scheme: dark;
+      --house:#191016;
+      --velvet:#241722;
+      --screen:#f2ece1;
+      --dim:#a79098;
+      --brass:#d9a13b;
+      --slate:#6d9aa6;
+      --rule:#3a2a34;
+      --display:"Bodoni MT","Bodoni 72",Didot,"Baskerville Old Face","Palatino Linotype",Georgia,serif;
+      --text:"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+    }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,sans-serif; }
-    main { width:min(1120px,92vw); margin:auto; }
-    section { padding:4rem 0; border-top:1px solid #1c2b45; }
-    section:first-child { border-top:none; }
-    h1 { font-size:clamp(2rem,5vw,3rem); margin:0 0 .5rem; }
-    h2 { font-size:clamp(1.4rem,3vw,1.9rem); margin:0 0 1rem; }
-    h3 { font-size:1.05rem; color:var(--muted); margin:1.5rem 0 .5rem; }
-    p { color:var(--muted); max-width:70ch; }
-    .card { background:var(--panel); border:1px solid #263650; border-radius:18px; padding:1.25rem; transition:border-color .2s ease; }
-    .metric { font-size:clamp(1.8rem,5vw,3.5rem); font-weight:750; }
-    .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:1rem; }
-    .bar-row { display:grid; grid-template-columns:9rem 1fr 3.5rem; align-items:center; gap:.75rem; margin:.4rem 0; }
-    .bar-track { background:#0c1626; border-radius:999px; overflow:hidden; height:.8rem; }
-    .bar-fill { height:100%; border-radius:999px; background:var(--accent); transition:width .4s ease; }
-    .bar-fill.positive { background:var(--positive); }
-    .bar-fill.negative { background:var(--negative); }
-    table { width:100%; border-collapse:collapse; margin-top:1rem; }
-    caption { caption-side:top; text-align:left; color:var(--muted); margin-bottom:.5rem; }
-    th, td { text-align:left; padding:.5rem .75rem; border-bottom:1px solid #263650; }
-    th { color:var(--muted); font-weight:600; }
-    .axis-label { color:var(--muted); font-size:.85rem; margin:.25rem 0; }
-    .sample { border-left:3px solid var(--accent); padding:.5rem .75rem; margin:.5rem 0; background:#0c1626; border-radius:0 8px 8px 0; }
-    .stack { display:grid; gap:1rem; margin-top:1rem; }
-    .stack .metric { font-size:1rem; font-weight:400; white-space:pre-wrap; overflow-wrap:anywhere; }
-    .matrix { overflow-x:auto; }
-    ul { color:var(--muted); }
-    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
-    .sr-only:focus { position:fixed; width:auto; height:auto; clip:auto; top:1rem; left:1rem; padding:.75rem; background:var(--panel); z-index:10; }
-    #local-csv select:disabled, #local-csv button:disabled { opacity:.45; }
-    #local-csv select, #local-csv button { transition:opacity .2s ease; }
-    #csv-progress { width:100%; height:.6rem; margin:.75rem 0; }
-    #csv-progress::-webkit-progress-value { transition:width .2s ease; }
-    #csv-progress::-moz-progress-bar { transition:width .2s ease; }
-    .card.busy { border-color:var(--accent); }
-    .metric-card { display:flex; flex-direction:column; gap:.25rem; }
-    .metric-card strong { font-size:1.4rem; animation:metric-in .3s ease-out; }
-    @keyframes metric-in { from { opacity:0; transform:translateY(.25rem); } to { opacity:1; transform:none; } }
+    body {
+      margin:0; background:var(--house); color:var(--screen);
+      font:1rem/1.65 var(--text); -webkit-font-smoothing:antialiased;
+    }
+    .wrap { width:min(64rem,88vw); margin-inline:auto; }
+    p { color:var(--dim); max-width:68ch; margin:0 0 1rem; }
+    p:last-child { margin-bottom:0; }
+    a { color:var(--brass); }
+    code { font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:.9em; color:var(--screen); }
+    :focus-visible { outline:2px solid var(--brass); outline-offset:3px; }
+
+    h1 {
+      font-family:var(--display); font-weight:400;
+      font-size:clamp(2.75rem,8vw,5.5rem); line-height:.95;
+      letter-spacing:-.015em; margin:0 0 1.25rem; max-width:22ch;
+    }
+    h2 {
+      font-family:var(--display); font-weight:400;
+      font-size:clamp(1.6rem,3.4vw,2.3rem); line-height:1.1;
+      letter-spacing:-.01em; margin:0 0 .75rem;
+    }
+    h3 { font-size:.95rem; font-weight:600; color:var(--brass); margin:2.25rem 0 .5rem; }
+    h3:first-child { margin-top:0; }
+
+    /* Hero: the corpus itself, at scale, instead of a headline statistic. */
+    .hero { padding:clamp(4rem,11vh,8rem) 0 4rem; }
+    .lede { font-size:1.125rem; color:var(--screen); max-width:60ch; }
+    .field {
+      display:flex; width:100%; margin:3.5rem 0 2.5rem;
+      min-height:clamp(6rem,14vh,9rem); overflow:hidden;
+    }
+    .field span {
+      display:flex; align-items:flex-end; width:0;
+      padding:1rem clamp(.75rem,3vw,2rem);
+      font-family:var(--display); font-size:clamp(1.25rem,3.5vw,2.25rem);
+      color:var(--house); font-variant-numeric:tabular-nums;
+      transition:width 1.1s cubic-bezier(.2,.7,.2,1);
+    }
+    .field .pole-positive { background:var(--brass); justify-content:flex-end; }
+    .field .pole-negative { background:var(--slate); }
+
+    /* Two-column bands: a narrow identity rail beside the reading column. */
+    .band {
+      display:grid; grid-template-columns:13rem minmax(0,1fr); gap:clamp(1.5rem,4vw,3.5rem);
+      padding:4.5rem 0; border-top:1px solid var(--rule);
+    }
+    .rail-note { font-size:.85rem; margin:0; }
+    .col { min-width:0; }
+
+    /* Figures render as data sheets, not as a grid of identical cards. */
+    .facts { margin:1rem 0 0; }
+    .facts > div {
+      display:grid; grid-template-columns:minmax(0,1fr) auto; gap:1rem;
+      align-items:baseline; padding:.55rem 0; border-bottom:1px solid var(--rule);
+    }
+    .facts dt { color:var(--dim); font-size:.9rem; }
+    .facts dd {
+      margin:0; font-variant-numeric:tabular-nums; font-weight:600;
+      text-align:right; overflow-wrap:anywhere;
+    }
+    .hero-facts { display:grid; gap:0; max-width:34rem; }
+    .figure { font-family:var(--display); font-size:1.5rem; font-weight:400; }
+
+    table { width:100%; border-collapse:collapse; margin-top:1rem; font-variant-numeric:tabular-nums; }
+    caption { caption-side:top; text-align:left; color:var(--brass); font-size:.95rem; font-weight:600; margin-bottom:.5rem; }
+    th, td { text-align:right; padding:.5rem .7rem; border-bottom:1px solid var(--rule); }
+    th:first-child, td:first-child { text-align:left; }
+    th { color:var(--dim); font-weight:600; font-size:.85rem; }
+    td.diagonal { color:var(--screen); font-weight:700; }
+    .scroller { overflow-x:auto; }
+
+    .bar-row { display:grid; grid-template-columns:6rem minmax(0,1fr) 4rem; align-items:center; gap:.75rem; margin:.5rem 0; }
+    .bar-row span:last-child { text-align:right; font-variant-numeric:tabular-nums; font-size:.9rem; }
+    .bar-track { background:var(--velvet); height:.55rem; }
+    .bar-fill { height:100%; background:var(--screen); opacity:.85; }
+    .bar-fill.tone-2 { opacity:.55; }
+    .bar-fill.tone-3 { opacity:.3; }
+
+    /* Numbered markers appear only here, because this content is a sequence. */
+    .steps { counter-reset:step; list-style:none; padding:0; margin:1rem 0 0; }
+    .steps li { counter-increment:step; padding:.6rem 0 .6rem 2.5rem; position:relative; color:var(--dim); border-bottom:1px solid var(--rule); }
+    .steps li::before {
+      content:counter(step); position:absolute; left:0; top:.55rem;
+      font-family:var(--display); font-size:1.1rem; color:var(--brass);
+    }
+
+    .excerpt { margin:0 0 1.25rem; padding:0 0 1.25rem; border-bottom:1px solid var(--rule); }
+    .excerpt:last-child { border-bottom:none; padding-bottom:0; margin-bottom:0; }
+    .excerpt-head { font-size:.85rem; color:var(--dim); margin:0 0 .4rem; }
+    .excerpt-head b { color:var(--screen); font-weight:600; }
+    .excerpt-head .pos { color:var(--brass); }
+    .excerpt-head .neg { color:var(--slate); }
+    .excerpt q { color:var(--screen); quotes:"“" "”"; display:block; max-width:72ch; }
+
+    .notes { color:var(--dim); padding-left:1.1rem; margin:1rem 0 0; }
+    .notes li { margin:.4rem 0; }
+    .notes li::marker { color:var(--brass); }
+
+    /* One panel, because one thing here is an instrument rather than a document. */
+    .panel { background:var(--velvet); border:1px solid var(--rule); border-radius:4px; padding:clamp(1rem,3vw,1.75rem); margin-top:1.5rem; }
+    .panel.busy { border-color:var(--brass); }
+    .panel-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:1rem 1.5rem; }
+    .panel label { display:block; font-size:.85rem; color:var(--dim); margin-bottom:.3rem; }
+    .panel input[type=file], .panel select {
+      width:100%; background:var(--house); color:var(--screen);
+      border:1px solid var(--rule); border-radius:3px; padding:.5rem; font:inherit; font-size:.9rem;
+    }
+    .panel select:disabled { opacity:.4; }
+    .actions { display:flex; flex-wrap:wrap; gap:.75rem; margin-top:1.5rem; }
+    button {
+      font:inherit; font-size:.9rem; font-weight:600; padding:.6rem 1.4rem;
+      border-radius:3px; cursor:pointer; transition:opacity .15s ease;
+    }
+    #scan-labels { background:transparent; color:var(--brass); border:1px solid var(--brass); }
+    #analyze-csv { background:var(--brass); color:var(--house); border:1px solid var(--brass); }
+    button:disabled { opacity:.35; cursor:not-allowed; }
+    #csv-progress { width:100%; height:.4rem; margin:1.25rem 0 0; accent-color:var(--brass); border:none; }
+    #csv-progress::-webkit-progress-bar { background:var(--house); }
+    #csv-progress::-webkit-progress-value { background:var(--brass); transition:width .2s ease; }
+    #csv-progress::-moz-progress-bar { background:var(--brass); transition:width .2s ease; }
+    #csv-error { color:var(--brass); margin:1rem 0 0; max-width:60ch; }
+    #csv-results:not(:empty) { margin-top:1.25rem; }
+
+    .meta { font-size:.8rem; margin-top:2.5rem; }
+    .meta > div { border-bottom:none; padding:.2rem 0; grid-template-columns:auto minmax(0,1fr); }
+    .meta dd { text-align:left; font-weight:400; color:var(--dim); }
+
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+    .sr-only:focus { position:fixed; width:auto; height:auto; clip-path:none; top:1rem; left:1rem; padding:.75rem; background:var(--velvet); z-index:10; }
+
+    @media (max-width:820px) {
+      .band { grid-template-columns:1fr; gap:1rem; padding:3rem 0; }
+      .facts > div { grid-template-columns:minmax(0,1fr) auto; }
+    }
     @media (prefers-reduced-motion: reduce) {
       *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
       #csv-progress::-webkit-progress-value,
@@ -54,177 +162,252 @@
 <body>
   <a class="sr-only" href="#summary">Ir para o conteúdo</a>
   <main>
-    <section id="summary">
-      <h1>Análise de Sentimentos IMDb</h1>
-      <p>
-        Este relatório é um único arquivo HTML autocontido: nenhum script externo é carregado,
-        nenhuma rede é acessada e todos os dados vêm do payload embutido abaixo. Ele resume o
-        conjunto de resenhas do IMDb, os modelos treinados e as decisões técnicas por trás do
-        pipeline em <code>src/build_report.py</code>.
-      </p>
-      <div class="grid">
-        <div class="card">
-          <h3>Linhas válidas no CSV de origem</h3>
-          <div class="metric" id="dataset-size"></div>
-          <p class="axis-label">Contagem antes da deduplicação, base da análise exploratória.</p>
-        </div>
-        <div class="card">
-          <h3>Linhas únicas após a deduplicação</h3>
-          <div class="metric" id="unique-size"></div>
-          <p class="axis-label">Base efetivamente dividida em treino, validação e teste.</p>
-        </div>
-        <div class="card">
-          <h3>Balanceamento entre classes</h3>
-          <div id="class-balance"></div>
-          <div id="class-balance-bars"></div>
-        </div>
+    <section id="summary" class="hero">
+      <div class="wrap">
+        <h1>Duas palavras decidem o filme: gostei ou não gostei</h1>
+        <p class="lede">
+          Cinquenta mil resenhas do IMDb, dois classificadores lineares e uma regra rígida:
+          o conjunto de teste é consultado uma única vez, no fim. Este arquivo guarda o estudo
+          completo — dados, métricas, erros e decisões — sem depender de rede.
+        </p>
       </div>
-      <p class="axis-label" id="report-meta"></p>
+      <div class="field" id="class-balance-bars" aria-hidden="true"></div>
+      <div class="wrap">
+        <dl class="facts hero-facts">
+          <div><dt>Linhas válidas no CSV de origem</dt><dd class="figure" id="dataset-size"></dd></div>
+          <div><dt>Linhas únicas após a deduplicação</dt><dd class="figure" id="unique-size"></dd></div>
+          <div><dt>Resenhas por classe</dt><dd id="class-balance"></dd></div>
+        </dl>
+        <dl class="facts meta" id="report-meta"></dl>
+      </div>
     </section>
 
-    <section id="method">
-      <h2>Objetivo e metodologia</h2>
-      <p>
-        O objetivo é classificar resenhas de filmes do IMDb como positivas ou negativas usando
-        modelos clássicos de aprendizado supervisionado (Naive Bayes multinomial e regressão
-        logística) sobre representações bag-of-words. Nenhum modelo de linguagem pré-treinado é
-        usado; tudo roda offline a partir de um CSV local.
-      </p>
-      <p>
-        A metodologia segue quatro etapas: limpeza de texto, divisão estratificada em
-        treino/validação/teste, treino dos dois modelos com o mesmo vocabulário e comparação por
-        métricas de classificação binária (acurácia, precisão, revocação e F1).
-      </p>
+    <section id="method" class="band">
+      <div class="rail">
+        <h2>O que foi medido</h2>
+        <p class="rail-note">Objetivo e metodologia.</p>
+      </div>
+      <div class="col wrap-none">
+        <p>
+          A tarefa é classificar uma resenha de filme como positiva ou negativa a partir do texto,
+          usando apenas métodos clássicos: contagem de palavras e dois modelos lineares. Nenhum
+          modelo de linguagem pré-treinado entra no pipeline, e nada sai desta máquina.
+        </p>
+        <p>
+          A comparação é intencionalmente estreita. Naive Bayes multinomial serve de baseline,
+          regressão logística serve de contraponto, e os dois recebem exatamente o mesmo
+          vocabulário bag-of-words, o mesmo split e as mesmas métricas — acurácia, precisão,
+          revocação e F1. O que diferencia os resultados é o modelo, não o pré-processamento.
+        </p>
+      </div>
     </section>
 
-    <section id="pipeline">
-      <h2>Do CSV à decisão</h2>
-      <p>
-        O pipeline lê o CSV informado, valida as colunas de texto e rótulo, remove HTML e
-        pontuação preservando negações ("not", "no", "nor", "never"), descarta linhas vazias ou
-        malformadas, remove duplicatas exatas (rejeitando duplicatas com rótulos conflitantes) e
-        só então divide os dados em treino, validação e teste de forma estratificada.
-      </p>
-      <p>
-        Cada etapa produz estatísticas próprias (linhas malformadas, textos ausentes, grupos de
-        duplicatas) que alimentam as seções de qualidade dos dados e de split abaixo.
-      </p>
-      <h3>Antes e depois da deduplicação</h3>
-      <div class="grid" id="quality-stats"></div>
+    <section id="pipeline" class="band">
+      <div class="rail">
+        <h2>Do CSV à decisão</h2>
+        <p class="rail-note">Cada etapa registra suas próprias estatísticas.</p>
+      </div>
+      <div class="col">
+        <ol class="steps">
+          <li>Ler o CSV e validar que as colunas de texto e de rótulo existem.</li>
+          <li>Descartar linhas malformadas, sem texto ou sem rótulo, contando cada caso.</li>
+          <li>Remover HTML e pontuação, preservando as negações <code>not</code>, <code>no</code>,
+            <code>nor</code> e <code>never</code>, que invertem o sentimento.</li>
+          <li>Agrupar textos idênticos e manter uma ocorrência, rejeitando duplicatas com rótulos
+            conflitantes.</li>
+          <li>Dividir de forma estratificada em treino, validação e teste, verificando que nenhum
+            texto atravessa dois conjuntos.</li>
+          <li>Treinar os dois modelos no treino, escolher o melhor pela validação e só então
+            revelar o teste.</li>
+        </ol>
+        <h3>Antes e depois da deduplicação</h3>
+        <dl class="facts" id="quality-stats"></dl>
+      </div>
     </section>
 
-    <section id="eda">
-      <h2>Qualidade dos dados</h2>
-      <p>
-        Estatísticas descritivas sobre o tamanho das resenhas (em caracteres e palavras), presença
-        de marcações HTML residuais e exemplos reais de cada classe, calculados antes do
-        treinamento dos modelos.
-      </p>
-      <h3>Distribuições e contagens observadas</h3>
-      <div class="grid" id="eda-stats"></div>
-      <h3>Amostras de resenhas por classe</h3>
-      <div class="stack" id="eda-samples"></div>
+    <section id="eda" class="band">
+      <div class="rail">
+        <h2>Qualidade dos dados</h2>
+        <p class="rail-note">Medido antes de qualquer treino.</p>
+      </div>
+      <div class="col">
+        <p>
+          Resenhas do IMDb são longas, irregulares e carregam marcações <code>&lt;br /&gt;</code>
+          herdadas do site. Saber a distribuição de tamanhos antes de vetorizar explica por que o
+          vocabulário precisa de um limite e por que a limpeza de HTML não é opcional.
+        </p>
+        <h3>Distribuições e contagens observadas</h3>
+        <dl class="facts" id="eda-stats"></dl>
+        <h3>Amostras de resenhas por classe</h3>
+        <div id="eda-samples"></div>
+      </div>
     </section>
 
-    <section id="leakage">
-      <h2>Split e prevenção de vazamento</h2>
-      <p>
-        Os dados são divididos em treino (70%), validação (15%) e teste (15%) de forma
-        estratificada por classe, com uma verificação explícita de que nenhum texto aparece em
-        mais de um conjunto. O vocabulário do vetorizador é ajustado apenas no conjunto de treino,
-        para que nenhuma palavra exclusiva de validação ou teste vaze para o modelo.
-      </p>
-      <h3>Tamanho de cada conjunto</h3>
-      <div id="split-sizes"></div>
-      <div id="split-sizes-bars"></div>
+    <section id="leakage" class="band">
+      <div class="rail">
+        <h2>Split e vazamento</h2>
+        <p class="rail-note">Por que 70 / 15 / 15.</p>
+      </div>
+      <div class="col">
+        <p>
+          A divisão é estratificada por classe em 70% de treino, 15% de validação e 15% de teste,
+          com semente fixa em 42 e uma verificação explícita de que nenhum texto aparece em mais de
+          um conjunto. O vocabulário do vetorizador é ajustado apenas no treino, de modo que
+          nenhuma palavra exclusiva da validação ou do teste alcança o modelo.
+        </p>
+        <p>
+          São necessários três conjuntos, e não dois, porque a escolha entre os modelos é feita na
+          validação: um conjunto usado para escolher deixa de ser uma estimativa imparcial do que
+          foi escolhido. O teste existe para ser consultado uma vez, depois de congeladas as
+          decisões.
+        </p>
+        <p>
+          As duas frações de retenção são iguais de propósito. Cada uma guarda cerca de 7.400
+          resenhas, o que dá um erro padrão de aproximadamente 0,4 ponto percentual sobre a
+          acurácia — intervalo estreito o bastante para separar os dois modelos, cuja diferença é
+          de quase 2 pontos. Retenções de 10% dobrariam o ruído perto dessa margem; retenções de
+          20% custariam cerca de 5.000 resenhas de treino, e com bigramas e <code>min_df=2</code> é
+          o treino que determina o tamanho do vocabulário. Validação e teste simétricos também
+          garantem que o modelo é julgado com a mesma precisão com que foi escolhido, e a validação
+          cruzada de cinco folds sobre o treino cobre a pergunta que resta: se um único corte de
+          validação teve sorte.
+        </p>
+        <h3>Tamanho de cada conjunto</h3>
+        <p id="split-sizes"></p>
+        <div id="split-sizes-bars"></div>
+      </div>
     </section>
 
-    <section id="models">
-      <h2>Comparação dos modelos</h2>
-      <p>
-        Naive Bayes multinomial e regressão logística são treinados com o mesmo vocabulário
-        bag-of-words (unigramas e bigramas) e comparados no conjunto de validação. O modelo com
-        melhor F1 de validação é selecionado e sua estabilidade é confirmada com validação cruzada
-        estratificada de 5 folds sobre o conjunto de treino.
-      </p>
-      <h3>Métricas de validação e teste</h3>
-      <div class="grid" id="model-comparison"></div>
-      <h3>Validação cruzada (5 folds, F1)</h3>
-      <div id="cross-validation"></div>
-      <h3>Matrizes de confusão</h3>
-      <p class="axis-label">Linhas: real negativo / real positivo. Colunas: previsto negativo / previsto positivo.</p>
-      <div class="stack" id="confusion-matrices"></div>
+    <section id="models" class="band">
+      <div class="rail">
+        <h2>Comparação dos modelos</h2>
+        <p class="rail-note">Escolha na validação, confirmação no teste.</p>
+      </div>
+      <div class="col">
+        <p>
+          Os dois pipelines compartilham o mesmo vetorizador — unigramas e bigramas,
+          <code>min_df=2</code>, teto de 50.000 termos — e diferem apenas no classificador. O
+          candidato com maior F1 de validação foi selecionado antes de o teste ser lido, e sua
+          estabilidade foi medida por validação cruzada estratificada de cinco folds usando somente
+          o treino.
+        </p>
+        <div class="scroller" id="model-comparison"></div>
+        <h3>Validação cruzada do modelo selecionado</h3>
+        <dl class="facts" id="cross-validation"></dl>
+        <h3>Matrizes de confusão no teste</h3>
+        <p class="rail-note">
+          Linhas: a classe real. Colunas: a classe prevista. A diagonal em destaque são os acertos.
+        </p>
+        <div id="confusion-matrices"></div>
+      </div>
     </section>
 
-    <section id="errors">
-      <h2>Onde os modelos erram</h2>
-      <p>
-        Exemplos reais do conjunto de teste em que os modelos erraram — falsos positivos
-        (resenha negativa classificada como positiva) e falsos negativos (resenha positiva
-        classificada como negativa) — ajudam a entender os limites dos modelos além das métricas
-        agregadas. Os dois modelos são mostrados, e cada exemplo indica no título a qual deles
-        pertence.
-      </p>
-      <div class="stack" id="error-examples"></div>
+    <section id="errors" class="band">
+      <div class="rail">
+        <h2>Onde os modelos erram</h2>
+        <p class="rail-note">Resenhas reais do conjunto de teste.</p>
+      </div>
+      <div class="col">
+        <p>
+          As métricas agregadas escondem o tipo do erro. Estes são trechos em que cada modelo
+          errou: falsos positivos, quando uma resenha negativa foi lida como positiva, e falsos
+          negativos, no caminho inverso. Os dois modelos aparecem, e cada trecho indica de qual
+          deles se trata e o que foi previsto no lugar do rótulo real.
+        </p>
+        <div id="error-examples"></div>
+      </div>
     </section>
 
-    <section id="decisions">
-      <h2>Decisões técnicas</h2>
-      <p>
-        Principais decisões de projeto que moldaram este pipeline, registradas junto com os
-        resultados para que continuem rastreáveis mesmo fora do repositório de código.
-      </p>
-      <ul id="decision-list"></ul>
+    <section id="decisions" class="band">
+      <div class="rail">
+        <h2>Decisões técnicas</h2>
+        <p class="rail-note">Registradas junto dos resultados.</p>
+      </div>
+      <div class="col">
+        <p>
+          As escolhas abaixo vêm do payload deste relatório, e não do texto da página, para que
+          continuem rastreáveis mesmo longe do repositório que as produziu.
+        </p>
+        <ul class="notes" id="decision-list"></ul>
+      </div>
     </section>
 
-    <section id="conclusion">
-      <h2>Conclusões e próximos passos</h2>
-      <p>
-        O modelo selecionado atinge desempenho competitivo com uma abordagem simples e totalmente
-        interpretável. Possíveis próximos passos incluem experimentar outros classificadores
-        lineares, ajustar hiperparâmetros do vetorizador ou ampliar o conjunto de dados — mantendo
-        sempre a divisão treino/validação/teste sem vazamento.
-      </p>
-      <h3>Limitações conhecidas</h3>
-      <ul>
-        <li>Bag-of-words ignora a ordem das palavras além dos bigramas, então ironia e negações
-          distantes continuam difíceis.</li>
-        <li>O vocabulário está limitado a 50.000 termos com frequência mínima de 2 documentos;
-          termos raros e erros de digitação são descartados.</li>
-        <li>O corpus é apenas de resenhas de filmes em inglês, com rótulos binários e balanceados —
-          o desempenho não se transfere automaticamente para outros domínios ou idiomas.</li>
-        <li>A deduplicação é por texto exato: quase-duplicatas ainda podem repetir entre conjuntos.</li>
-      </ul>
-      <h3>Próximos passos acionáveis</h3>
-      <ul>
-        <li>Comparar TF-IDF e SVM linear com a mesma divisão congelada.</li>
-        <li>Ajustar <code>min_df</code>, <code>max_features</code> e a faixa de n-gramas por busca em
-          grade sobre a validação, sem tocar no teste.</li>
-        <li>Inspecionar os coeficientes mais influentes da regressão logística para validar o modelo
-          com quem conhece o domínio.</li>
-        <li>Avaliar deduplicação aproximada (por exemplo, MinHash) antes do split.</li>
-      </ul>
+    <section id="conclusion" class="band">
+      <div class="rail">
+        <h2>Conclusões</h2>
+        <p class="rail-note">Limites e próximos passos.</p>
+      </div>
+      <div class="col">
+        <p>
+          O modelo selecionado alcança desempenho competitivo com uma abordagem simples e
+          inteiramente interpretável: é possível ler os coeficientes e explicar cada decisão. Esse
+          é o argumento a favor de começar por um baseline linear antes de recorrer a algo maior.
+        </p>
+        <h3>Limitações conhecidas</h3>
+        <ul class="notes">
+          <li>Bag-of-words ignora a ordem das palavras além dos bigramas, então ironia e negações
+            distantes continuam difíceis.</li>
+          <li>O vocabulário para em 50.000 termos com frequência mínima de dois documentos; termos
+            raros e erros de digitação são descartados.</li>
+          <li>O corpus é só de resenhas de filmes em inglês, com rótulos binários e balanceados. O
+            desempenho não se transfere sozinho para outros domínios ou idiomas.</li>
+          <li>A deduplicação exige texto idêntico, então quase-duplicatas ainda podem repetir entre
+            conjuntos.</li>
+        </ul>
+        <h3>Próximos passos acionáveis</h3>
+        <ul class="notes">
+          <li>Comparar TF-IDF e SVM linear sobre a mesma divisão congelada.</li>
+          <li>Ajustar <code>min_df</code>, <code>max_features</code> e a faixa de n-gramas por busca
+            em grade na validação, sem tocar no teste.</li>
+          <li>Inspecionar os coeficientes mais influentes da regressão logística com quem conhece o
+            domínio.</li>
+          <li>Avaliar deduplicação aproximada, por exemplo MinHash, antes do split.</li>
+        </ul>
+      </div>
     </section>
 
-    <section id="local-csv">
-      <h2>Analise outro CSV localmente</h2>
-      <p>
-        Os dados de um CSV escolhido no navegador nesta seção permanecem apenas nesta máquina:
-        eles nunca são enviados a um servidor e nunca treinam ou alimentam um modelo — servem
-        somente para uma análise exploratória (EDA) local.
-      </p>
-      <div class="card">
-        <label for="csv-file">Selecione um CSV</label>
-        <input id="csv-file" type="file" accept=".csv,text/csv">
-        <label for="text-column">Coluna de texto</label><select id="text-column" disabled></select>
-        <label for="label-column">Coluna de classe</label><select id="label-column" disabled></select>
-        <button id="scan-labels" type="button" disabled>Ler classes</button>
-        <label for="positive-label">Valor positivo</label><select id="positive-label" disabled></select>
-        <label for="negative-label">Valor negativo</label><select id="negative-label" disabled></select>
-        <button id="analyze-csv" type="button" disabled>Analisar CSV</button>
-        <progress id="csv-progress" max="100" value="0"></progress>
-        <p id="csv-error" role="alert" hidden></p>
-        <div id="csv-results" aria-live="polite"></div>
+    <section id="local-csv" class="band">
+      <div class="rail">
+        <h2>Analise outro CSV</h2>
+        <p class="rail-note">Roda no navegador, nesta máquina.</p>
+      </div>
+      <div class="col">
+        <p>
+          Escolha um CSV com uma coluna de texto e uma coluna de classe para obter a mesma análise
+          exploratória aplicada ao IMDb. O arquivo é lido pelo navegador e nada é enviado a
+          servidor algum: estes dados não treinam nem alimentam nenhum modelo.
+        </p>
+        <div class="panel">
+          <div class="panel-grid">
+            <div>
+              <label for="csv-file">Arquivo CSV</label>
+              <input id="csv-file" type="file" accept=".csv,text/csv">
+            </div>
+            <div>
+              <label for="text-column">Coluna de texto</label>
+              <select id="text-column" disabled></select>
+            </div>
+            <div>
+              <label for="label-column">Coluna de classe</label>
+              <select id="label-column" disabled></select>
+            </div>
+            <div>
+              <label for="positive-label">Valor da classe positiva</label>
+              <select id="positive-label" disabled></select>
+            </div>
+            <div>
+              <label for="negative-label">Valor da classe negativa</label>
+              <select id="negative-label" disabled></select>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="scan-labels" type="button" disabled>Ler classes</button>
+            <button id="analyze-csv" type="button" disabled>Analisar CSV</button>
+          </div>
+          <progress id="csv-progress" max="100" value="0" aria-label="Progresso da leitura do CSV"></progress>
+          <p id="csv-error" role="alert" hidden></p>
+          <dl class="facts" id="csv-results" aria-live="polite"></dl>
+        </div>
       </div>
     </section>
   </main>
@@ -262,7 +445,8 @@
         ? Math.round(lengths.characters.reduce((total, value) => total + value, 0) / count)
         : 0;
       summary.medianCharacters = count ? lengths.characters[Math.floor(count / 2)] : 0;
-      summary.p95Characters = count ? lengths.characters[Math.floor((count - 1) * .95)] : 0;
+      // Mesma fórmula de percentil usada em _percentile no pipeline Python.
+      summary.p95Characters = count ? lengths.characters[Math.round((count - 1) * .95)] : 0;
       summary.medianWords = count ? lengths.words[Math.floor(count / 2)] : 0;
       return summary;
     }
@@ -366,7 +550,7 @@
       "scan-labels", "analyze-csv", "csv-progress", "csv-error", "csv-results"
     ].map(id => [id, document.getElementById(id)]));
     let selectedFile = null;
-    const localCsvCard = controls["csv-file"].closest(".card");
+    const localCsvPanel = controls["csv-file"].closest(".panel");
 
     function fillSelect(select, values) {
       select.replaceChildren(...values.map(value => {
@@ -378,31 +562,36 @@
       select.disabled = values.length === 0;
     }
 
+    function factRow(label, value) {
+      const row = document.createElement("div");
+      const term = document.createElement("dt");
+      const description = document.createElement("dd");
+      term.textContent = label;
+      description.textContent = typeof value === "number" ? value.toLocaleString("pt-BR") : String(value);
+      row.append(term, description);
+      return row;
+    }
+
     function showError(error) {
       controls["csv-results"].replaceChildren();
+      controls["csv-progress"].value = 0;
       controls["csv-error"].textContent = error.message || String(error);
       controls["csv-error"].hidden = false;
     }
 
     function renderLocalSummary(summary) {
       controls["csv-error"].hidden = true;
+      controls["csv-progress"].value = 100;
       const labels = {
-        rows:"Linhas", valid:"Válidas", invalid:"Inválidas", missingText:"Sem texto",
+        rows:"Linhas lidas", valid:"Válidas", invalid:"Inválidas", missingText:"Sem texto",
         missingLabel:"Sem classe", unexpectedLabel:"Classe inesperada", positive:"Positivas",
         negative:"Negativas", duplicates:"Duplicadas", htmlRows:"Com HTML",
-        meanCharacters:"Média de caracteres", medianCharacters:"Mediana de caracteres",
-        p95Characters:"P95 de caracteres", medianWords:"Mediana de palavras"
+        meanCharacters:"Caracteres — média", medianCharacters:"Caracteres — mediana",
+        p95Characters:"Caracteres — P95", medianWords:"Palavras — mediana"
       };
-      controls["csv-results"].replaceChildren(...Object.entries(labels).map(([key, label]) => {
-        const card = document.createElement("div");
-        card.className = "card metric-card";
-        const title = document.createElement("span");
-        const value = document.createElement("strong");
-        title.textContent = label;
-        value.textContent = String(summary[key]);
-        card.append(title, value);
-        return card;
-      }));
+      controls["csv-results"].replaceChildren(
+        ...Object.entries(labels).map(([key, label]) => factRow(label, summary[key]))
+      );
     }
 
     controls["csv-file"].addEventListener("change", () => {
@@ -411,6 +600,7 @@
       fillSelect(controls["positive-label"], []);
       fillSelect(controls["negative-label"], []);
       controls["analyze-csv"].disabled = true;
+      controls["csv-progress"].value = 0;
       if (!selectedFile) {
         fillSelect(controls["text-column"], []);
         fillSelect(controls["label-column"], []);
@@ -433,7 +623,7 @@
     });
 
     controls["scan-labels"].addEventListener("click", async () => {
-      localCsvCard.classList.add("busy");
+      localCsvPanel.classList.add("busy");
       controls["csv-progress"].value = 0;
       try {
         const labels = await readLabels(selectedFile, controls["label-column"].value);
@@ -441,8 +631,9 @@
         fillSelect(controls["positive-label"], labels);
         fillSelect(controls["negative-label"], labels);
         controls["analyze-csv"].disabled = false;
+        controls["csv-progress"].value = 100;
       } catch (error) { showError(error); }
-      finally { localCsvCard.classList.remove("busy"); }
+      finally { localCsvPanel.classList.remove("busy"); }
     });
 
     controls["label-column"].addEventListener("change", () => {
@@ -452,7 +643,7 @@
     });
 
     controls["analyze-csv"].addEventListener("click", async () => {
-      localCsvCard.classList.add("busy");
+      localCsvPanel.classList.add("busy");
       controls["csv-progress"].value = 0;
       try {
         renderLocalSummary(await analyzeLocalCsv(selectedFile, {
@@ -462,104 +653,132 @@
           negativeLabel:controls["negative-label"].value
         }));
       } catch (error) { showError(error); }
-      finally { localCsvCard.classList.remove("busy"); }
+      finally { localCsvPanel.classList.remove("busy"); }
     });
   </script>
   <script>
+    const MODEL_LABELS = {naive_bayes:"Naive Bayes", logistic_regression:"Regressão Logística"};
+    const SPLIT_LABELS = {validation:"validação", test:"teste"};
+    const METRIC_LABELS = {accuracy:"Acurácia", precision:"Precisão", recall:"Revocação", f1:"F1"};
+    const METRIC_KEYS = ["accuracy", "precision", "recall", "f1"];
+    const CLASS_LABELS = {negative:"negativas", positive:"positivas"};
+    const ERROR_LABELS = {
+      false_positives:"falso positivo", false_negatives:"falso negativo"
+    };
+    const ROW_LABELS = ["real negativo", "real positivo"];
+    const COLUMN_LABELS = ["previsto negativo", "previsto positivo"];
+
     function setText(id, value) {
       document.getElementById(id).textContent = String(value);
     }
 
-    function appendMetric(container, label, value) {
-      const card = document.createElement("article");
-      card.className = "card";
-      const heading = document.createElement("h3");
-      const metric = document.createElement("p");
-      heading.textContent = label;
-      metric.className = "metric";
-      metric.textContent = typeof value === "number" ? value.toLocaleString("pt-BR") : value;
-      card.append(heading, metric);
-      container.append(card);
+    function number(value) {
+      return typeof value === "number" ? value.toLocaleString("pt-BR") : String(value);
     }
 
-    function renderStoredReport(report) {
-      setText("dataset-size", report.eda.rows);
-      setText("class-balance",
-        `${report.eda.class_counts.positive} positivas · ${report.eda.class_counts.negative} negativas`);
-      setText("split-sizes",
-        `${report.splits.train} treino · ${report.splits.validation} validação · ${report.splits.test} teste`);
-
-      const edaSamples = document.getElementById("eda-samples");
-      for (const [label, samples] of Object.entries(report.eda.samples)) {
-        for (const sample of samples) appendMetric(edaSamples, `Amostra ${label}`, sample.slice(0, 500));
-      }
-
-      const comparison = document.getElementById("model-comparison");
-      for (const [name, result] of Object.entries(report.modeling.models)) {
-        for (const split of ["validation", "test"]) {
-          for (const [metric, value] of Object.entries(result[split].metrics)) {
-            if (metric !== "confusion_matrix") {
-              appendMetric(comparison, `${MODEL_LABELS[name]} · ${split} · ${metric}`, value);
-            }
-          }
-        }
-      }
-      setText("cross-validation",
-        `${report.modeling.cross_validation_f1.join(" · ")} · média ${report.modeling.cross_validation_mean} · desvio ${report.modeling.cross_validation_std}`);
-
-      const errors = document.getElementById("error-examples");
-      for (const [name, result] of Object.entries(report.modeling.models)) {
-        for (const [kind, samples] of Object.entries(result.test.errors)) {
-          for (const sample of samples) appendMetric(errors, `${MODEL_LABELS[name]} · ${kind}`, sample.text);
-        }
-      }
-
-      const decisionList = document.getElementById("decision-list");
-      decisionList.replaceChildren(...report.decisions.map(decision => {
-        const item = document.createElement("li");
-        item.textContent = decision;
-        return item;
-      }));
+    function row(label, value) {
+      const line = document.createElement("div");
+      const term = document.createElement("dt");
+      const description = document.createElement("dd");
+      term.textContent = label;
+      description.textContent = number(value);
+      line.append(term, description);
+      return line;
     }
 
-    const MODEL_LABELS = {naive_bayes:"Naive Bayes", logistic_regression:"Regressão Logística"};
-    const ROW_LABELS = ["real negativo", "real positivo"];
-    const COLUMN_LABELS = ["previsto negativo", "previsto positivo"];
+    function fillFacts(id, entries) {
+      document.getElementById(id).replaceChildren(
+        ...entries.map(([label, value]) => row(label, value))
+      );
+    }
 
-    function cell(tag, text) {
+    function cell(tag, text, className) {
       const node = document.createElement(tag);
       node.textContent = text;
-      if (tag === "th" && text) node.scope = "col";
+      if (className) node.className = className;
       return node;
     }
 
-    function appendConfusionTable(container, name, matrix) {
-      const wrapper = document.createElement("div");
-      wrapper.className = "card matrix";
+    function appendExcerpt(container, head, text) {
+      const block = document.createElement("div");
+      block.className = "excerpt";
+      const heading = document.createElement("p");
+      heading.className = "excerpt-head";
+      heading.append(...head);
+      const quote = document.createElement("q");
+      quote.textContent = text;
+      block.append(heading, quote);
+      container.append(block);
+    }
+
+    function strong(text, className) {
+      const node = document.createElement("b");
+      node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function plain(text) {
+      return document.createTextNode(text);
+    }
+
+    function renderComparisonTable(report) {
       const table = document.createElement("table");
       const caption = document.createElement("caption");
-      caption.textContent = `${MODEL_LABELS[name]} — matriz de confusão do conjunto de teste`;
+      caption.textContent = "F1 e demais métricas por modelo e conjunto";
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      headRow.append(cell("th", "Modelo e conjunto"), ...METRIC_KEYS.map(key => cell("th", METRIC_LABELS[key])));
+      head.append(headRow);
+      const body = document.createElement("tbody");
+      const selected = report.modeling.selected_model;
+      for (const [name, result] of Object.entries(report.modeling.models)) {
+        for (const split of ["validation", "test"]) {
+          const line = document.createElement("tr");
+          const label = `${MODEL_LABELS[name] || name} — ${SPLIT_LABELS[split]}`;
+          line.append(
+            cell("th", name === selected ? `${label} (selecionado)` : label),
+            ...METRIC_KEYS.map(key => cell("td", number(result[split].metrics[key])))
+          );
+          line.firstChild.scope = "row";
+          body.append(line);
+        }
+      }
+      table.append(caption, head, body);
+      document.getElementById("model-comparison").replaceChildren(table);
+    }
+
+    function appendConfusionTable(container, name, matrix) {
+      const scroller = document.createElement("div");
+      scroller.className = "scroller";
+      const table = document.createElement("table");
+      const caption = document.createElement("caption");
+      caption.textContent = `${MODEL_LABELS[name] || name} — conjunto de teste`;
       const head = document.createElement("thead");
       const headRow = document.createElement("tr");
       headRow.append(cell("th", ""), ...COLUMN_LABELS.map(label => cell("th", label)));
       head.append(headRow);
       const body = document.createElement("tbody");
-      matrix.forEach((row, index) => {
+      matrix.forEach((line, index) => {
         const bodyRow = document.createElement("tr");
         const header = cell("th", ROW_LABELS[index]);
         header.scope = "row";
-        bodyRow.append(header, ...row.map(value => cell("td", value.toLocaleString("pt-BR"))));
+        bodyRow.append(
+          header,
+          ...line.map((value, column) =>
+            cell("td", number(value), column === index ? "diagonal" : ""))
+        );
         body.append(bodyRow);
       });
       table.append(caption, head, body);
-      wrapper.append(table);
-      container.append(wrapper);
+      scroller.append(table);
+      container.append(scroller);
     }
 
     function appendBar(container, label, value, total, tone) {
       const share = total ? value / total * 100 : 0;
-      const row = document.createElement("div");
-      row.className = "bar-row";
+      const line = document.createElement("div");
+      line.className = "bar-row";
       const name = document.createElement("span");
       name.textContent = label;
       const track = document.createElement("div");
@@ -569,39 +788,107 @@
       fill.style.width = `${share.toFixed(1)}%`;
       track.append(fill);
       const count = document.createElement("span");
-      count.textContent = `${share.toFixed(1)}%`;
-      row.append(name, track, count);
-      container.append(row);
+      count.textContent = `${number(value)} · ${share.toFixed(1)}%`;
+      line.append(name, track, count);
+      container.append(line);
     }
 
-    function appendStats(id, entries) {
-      const container = document.getElementById(id);
-      for (const [label, value] of entries) appendMetric(container, label, value);
+    function renderClassField(counts) {
+      const total = counts.positive + counts.negative;
+      const field = document.getElementById("class-balance-bars");
+      const poles = [
+        ["pole-positive", counts.positive, "positivas"],
+        ["pole-negative", counts.negative, "negativas"],
+      ].map(([tone, value, label]) => {
+        const pole = document.createElement("span");
+        pole.className = tone;
+        pole.textContent = `${number(value)} ${label}`;
+        pole.dataset.share = total ? `${(value / total * 100).toFixed(2)}%` : "50%";
+        return pole;
+      });
+      field.replaceChildren(...poles);
+      // O único movimento não solicitado da página: as duas metades abrem a partir da emenda.
+      requestAnimationFrame(() => {
+        for (const pole of poles) pole.style.width = pole.dataset.share;
+      });
+    }
+
+    function renderStoredReport(report) {
+      setText("dataset-size", number(report.eda.rows));
+      setText("class-balance",
+        `${number(report.eda.class_counts.positive)} positivas, ${number(report.eda.class_counts.negative)} negativas`);
+      setText("split-sizes",
+        `${number(report.splits.train)} de treino, ${number(report.splits.validation)} de validação`
+        + ` e ${number(report.splits.test)} de teste.`);
+
+      const samples = document.getElementById("eda-samples");
+      samples.replaceChildren();
+      for (const [label, texts] of Object.entries(report.eda.samples)) {
+        const tone = label === "positive" ? "pos" : "neg";
+        for (const text of texts) {
+          appendExcerpt(samples,
+            [plain("Resenha "), strong(CLASS_LABELS[label] || label, tone)],
+            text.slice(0, 500));
+        }
+      }
+
+      renderComparisonTable(report);
+
+      const cv = report.modeling.cross_validation_f1;
+      fillFacts("cross-validation", [
+        ...cv.map((score, index) => [`F1 do fold ${index + 1}`, score]),
+        ["Média dos folds", report.modeling.cross_validation_mean],
+        ["Desvio padrão", report.modeling.cross_validation_std],
+      ]);
+
+      const errors = document.getElementById("error-examples");
+      errors.replaceChildren();
+      for (const [name, result] of Object.entries(report.modeling.models)) {
+        for (const [kind, samples] of Object.entries(result.test.errors)) {
+          for (const sample of samples) {
+            const realLabel = sample.expected === 1 ? "positiva" : "negativa";
+            const guessLabel = sample.predicted === 1 ? "positiva" : "negativa";
+            appendExcerpt(errors, [
+              strong(MODEL_LABELS[name] || name),
+              plain(` leu esta resenha ${realLabel} como ${guessLabel} `),
+              strong(`(${ERROR_LABELS[kind] || kind})`, sample.predicted === 1 ? "pos" : "neg"),
+            ], sample.text);
+          }
+        }
+      }
+
+      document.getElementById("decision-list").replaceChildren(
+        ...report.decisions.map(decision => {
+          const item = document.createElement("li");
+          item.textContent = decision;
+          return item;
+        })
+      );
     }
 
     function renderReportExtras(report) {
       const meta = report.meta || {};
-      setText("report-meta",
-        `Gerado em ${meta.generated_at_utc} · fonte ${meta.source_name} · Python ${meta.python}`
-        + ` · scikit-learn ${meta.scikit_learn} · modelo selecionado:`
-        + ` ${MODEL_LABELS[report.modeling.selected_model] || report.modeling.selected_model}`);
+      fillFacts("report-meta", [
+        ["Gerado em", meta.generated_at_utc],
+        ["Fonte", meta.source_name],
+        ["Python", meta.python],
+        ["scikit-learn", meta.scikit_learn],
+        ["Modelo selecionado", MODEL_LABELS[report.modeling.selected_model] || report.modeling.selected_model],
+      ]);
 
       const quality = report.quality || {};
-      setText("unique-size", quality.unique_rows);
-
-      const counts = report.eda.class_counts;
-      const classTotal = counts.positive + counts.negative;
-      const balanceBars = document.getElementById("class-balance-bars");
-      appendBar(balanceBars, "positivas", counts.positive, classTotal, "positive");
-      appendBar(balanceBars, "negativas", counts.negative, classTotal, "negative");
+      setText("unique-size", number(quality.unique_rows));
+      renderClassField(report.eda.class_counts);
 
       const splitBars = document.getElementById("split-sizes-bars");
+      splitBars.replaceChildren();
       const splitTotal = report.splits.train + report.splits.validation + report.splits.test;
-      for (const [key, label] of [["train", "treino"], ["validation", "validação"], ["test", "teste"]]) {
-        appendBar(splitBars, label, report.splits[key], splitTotal);
-      }
+      const tones = ["", "tone-2", "tone-3"];
+      [["train", "treino"], ["validation", "validação"], ["test", "teste"]]
+        .forEach(([key, label], index) =>
+          appendBar(splitBars, label, report.splits[key], splitTotal, tones[index]));
 
-      appendStats("quality-stats", [
+      fillFacts("quality-stats", [
         ["Linhas de origem no CSV", quality.source_rows],
         ["Linhas válidas antes da deduplicação", report.eda.rows],
         ["Linhas únicas após a deduplicação", quality.unique_rows],
@@ -613,21 +900,25 @@
       ]);
 
       const characters = report.eda.characters, words = report.eda.words;
-      appendStats("eda-stats", [
+      const byClass = report.eda.by_class;
+      fillFacts("eda-stats", [
         ["Resenhas com HTML residual", report.eda.html_rows],
         ["Caracteres — média", characters.mean],
         ["Caracteres — mediana", characters.median],
         ["Caracteres — P95", characters.p95],
-        ["Caracteres — mínimo / máximo", `${characters.min} / ${characters.max}`],
+        ["Caracteres — mínimo e máximo", `${number(characters.min)} e ${number(characters.max)}`],
         ["Palavras — média", words.mean],
         ["Palavras — mediana", words.median],
         ["Palavras — P95", words.p95],
-        ["Palavras — mínimo / máximo", `${words.min} / ${words.max}`],
-        ["Mediana de palavras — negativas", report.eda.by_class.negative.median_words],
-        ["Mediana de palavras — positivas", report.eda.by_class.positive.median_words],
+        ["Palavras — mínimo e máximo", `${number(words.min)} e ${number(words.max)}`],
+        ["Mediana de caracteres — negativas", byClass.negative.median_characters],
+        ["Mediana de caracteres — positivas", byClass.positive.median_characters],
+        ["Mediana de palavras — negativas", byClass.negative.median_words],
+        ["Mediana de palavras — positivas", byClass.positive.median_words],
       ]);
 
       const matrices = document.getElementById("confusion-matrices");
+      matrices.replaceChildren();
       for (const [name, result] of Object.entries(report.modeling.models)) {
         appendConfusionTable(matrices, name, result.test.metrics.confusion_matrix);
       }
