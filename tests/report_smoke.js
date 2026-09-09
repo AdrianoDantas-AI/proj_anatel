@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = process.argv[2];
 const html = fs.readFileSync(path, "utf8");
 const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-if (blocks.length !== 4) throw new Error(`esperava 4 blocos de script, achei ${blocks.length}`);
+if (blocks.length !== 2) throw new Error(`esperava 2 blocos de script, achei ${blocks.length}`);
 
 class Node {
   constructor(tag) {
@@ -34,10 +34,6 @@ class TextNode {
 
 const byId = new Map();
 for (const id of html.matchAll(/id="([a-z0-9-]+)"/g)) byId.set(id[1], new Node("div"));
-// The interactive controls need file/option semantics the render block never touches.
-byId.get("csv-file").files = [];
-byId.get("csv-file").addEventListener = () => {};
-for (const id of ["scan-labels", "analyze-csv", "label-column"]) byId.get(id).addEventListener = () => {};
 
 const document = {
   getElementById: id => {
@@ -57,12 +53,11 @@ const context = {
   document,
   console: { assert: (ok, msg) => { if (!ok) throw new Error(`console.assert: ${msg}`); } },
   requestAnimationFrame: fn => frames.push(fn),
-  Papa: { parse: () => {} },
 };
 const vm = require("node:vm");
 vm.createContext(context);
-// Blocks 2, 3 and 4: the payload, the browser EDA (incl. its self-check), the report render.
-for (const index of [1, 2, 3]) {
+// Os dois blocos contêm o payload e a renderização do relatório.
+for (const index of [0, 1]) {
   vm.runInContext(blocks[index], context, { filename: `block-${index}.js` });
 }
 for (const fn of frames) fn();

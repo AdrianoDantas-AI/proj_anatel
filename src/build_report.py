@@ -295,16 +295,13 @@ def run_models(
 def render_report(
     payload: dict[str, object],
     template_path: Path,
-    papa_path: Path,
     output_path: Path,
 ) -> None:
     template = template_path.read_text(encoding="utf-8")
-    if template.count("__REPORT_DATA__") != 1 or template.count("__PAPA_PARSE_SOURCE__") != 1:
-        raise ValueError("template deve conter cada placeholder exatamente uma vez")
+    if template.count("__REPORT_DATA__") != 1:
+        raise ValueError("template deve conter o placeholder exatamente uma vez")
     safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
-    rendered = template.replace(
-        "__PAPA_PARSE_SOURCE__", papa_path.read_text(encoding="utf-8")
-    ).replace("__REPORT_DATA__", safe_json)
+    rendered = template.replace("__REPORT_DATA__", safe_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=output_path.parent, suffix=".html", text=True
@@ -511,7 +508,6 @@ def main(argv: list[str] | None = None) -> int:
         render_report(
             payload,
             REPO_ROOT / "src" / "report_template.html",
-            REPO_ROOT / "src" / "vendor" / "papaparse.min.js",
             output_path,
         )
     except ValueError as error:

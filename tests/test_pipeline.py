@@ -1,5 +1,4 @@
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -129,60 +128,42 @@ from src.build_report import render_report
 
 REQUIRED_SECTION_IDS = {
     "summary", "method", "pipeline", "eda", "leakage",
-    "models", "normalization", "errors", "decisions", "conclusion", "local-csv"
+    "models", "normalization", "errors", "decisions", "conclusion"
 }
 
 
 def test_rendered_report_is_self_contained(tmp_path: Path) -> None:
     template = tmp_path / "template.html"
     template.write_text(
-        '<!doctype html><html><body><script>__PAPA_PARSE_SOURCE__</script>'
-        '<script>const REPORT = __REPORT_DATA__;</script>'
+        '<!doctype html><html><body><script>const REPORT = __REPORT_DATA__;</script>'
         + "".join(f'<section id="{name}"></section>' for name in REQUIRED_SECTION_IDS)
         + "</body></html>",
         encoding="utf-8",
     )
-    papa = tmp_path / "papa.js"
-    papa.write_text("window.Papa = {};", encoding="utf-8")
     output = tmp_path / "report.html"
 
-    render_report({"title": "IMDb </script> safe"}, template, papa, output)
+    render_report({"title": "IMDb </script> safe"}, template, output)
     rendered = output.read_text(encoding="utf-8")
 
     assert "__REPORT_DATA__" not in rendered
-    assert "__PAPA_PARSE_SOURCE__" not in rendered
     assert "<\\/script>" in rendered
     assert 'src="http' not in rendered
     assert 'href="http' not in rendered
     assert all(f'id="{name}"' in rendered for name in REQUIRED_SECTION_IDS)
 
 
-def test_real_template_contains_offline_csv_analyzer(tmp_path: Path) -> None:
+def test_real_template_excludes_local_csv_analyzer(tmp_path: Path) -> None:
     output = tmp_path / "real-report.html"
     render_report(
         {},
         Path("src/report_template.html"),
-        Path("src/vendor/papaparse.min.js"),
         output,
     )
     rendered = output.read_text(encoding="utf-8")
 
-    for identifier in (
-        "csv-file", "text-column", "label-column", "positive-label",
-        "negative-label", "scan-labels", "analyze-csv", "csv-progress",
-        "csv-error", "csv-results"
-    ):
-        assert f'id="{identifier}"' in rendered
-    assert "function summarizeRows" in rendered
-    assert "function runBrowserSelfCheck" in rendered
-    # The vendored parser carries an unused XHR path (its remote-URL streamer,
-    # never invoked since we always hand it a local File), so the no-network
-    # guarantee is asserted against the template's own source plus the
-    # absence of external URLs in the output, not against the rendered
-    # output that inlines the vendored parser.
-    template_source = Path("src/report_template.html").read_text(encoding="utf-8")
-    assert "fetch(" not in template_source
-    assert "XMLHttpRequest" not in template_source
+    assert "Analise outro CSV" not in rendered
+    assert 'id="local-csv"' not in rendered
+    assert "Papa.parse" not in rendered
     assert 'src="http' not in rendered
     assert 'href="http' not in rendered
 
@@ -196,8 +177,7 @@ def test_cli_generates_report_from_balanced_csv(tmp_path: Path) -> None:
     rows.extend(f'"awful cold story {index}",negative' for index in range(20))
     source = write_csv(tmp_path, "\n".join(rows) + "\n")
     template = Path("src/report_template.html")
-    papa = Path("src/vendor/papaparse.min.js")
-    assert template.is_file() and papa.is_file()
+    assert template.is_file()
     output = tmp_path / "analysis.html"
 
     exit_code = main([
@@ -216,15 +196,6 @@ def test_cli_generates_report_from_balanced_csv(tmp_path: Path) -> None:
     assert '"train"' in rendered
     assert '"validation"' in rendered
     assert '"test"' in rendered
-
-
-def test_template_controls_map_declares_every_used_id() -> None:
-    source = Path("src/report_template.html").read_text(encoding="utf-8")
-    block = re.search(r"const controls = Object\.fromEntries\(\[(.*?)\]", source, re.S)
-    assert block is not None
-    declared = set(re.findall(r'"([^"]+)"', block.group(1)))
-    used = set(re.findall(r'controls\["([^"]+)"\]', source))
-    assert used <= declared, f"ids usados sem declaração no mapa controls: {sorted(used - declared)}"
 
 
 def test_encode_rows_stores_stripped_text_so_padding_cannot_split_a_group(
