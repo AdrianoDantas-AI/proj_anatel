@@ -83,3 +83,37 @@ def test_profiles_and_deduplicates_before_split() -> None:
 def test_rejects_duplicate_text_with_conflicting_labels() -> None:
     with pytest.raises(ValueError, match="rótulos conflitantes"):
         deduplicate_rows([("same review", 1), ("same review", 0)])
+
+
+from src.build_report import run_models
+
+
+def test_models_use_train_vocabulary_and_return_required_metrics() -> None:
+    train = [
+        *((f"excellent warm story sharedword {index}", 1) for index in range(12)),
+        *((f"awful cold story sharedword {index}", 0) for index in range(12)),
+    ]
+    validation = [
+        *((f"excellent warm validation {index}", 1) for index in range(5)),
+        *((f"awful cold validation {index}", 0) for index in range(5)),
+    ]
+    test = [
+        *((f"excellent warm testonlyword {index}", 1) for index in range(5)),
+        *((f"awful cold testonlyword {index}", 0) for index in range(5)),
+    ]
+
+    models, result = run_models(
+        {"train": train, "validation": validation, "test": test}
+    )
+
+    assert set(models) == {"naive_bayes", "logistic_regression"}
+    assert "testonlyword" not in models["naive_bayes"].named_steps["bow"].vocabulary_
+    assert result["selected_model"] in models
+    assert len(result["cross_validation_f1"]) == 5
+    for model_result in result["models"].values():
+        assert set(model_result["validation"]["metrics"]) == {
+            "accuracy", "precision", "recall", "f1", "confusion_matrix"
+        }
+        assert set(model_result["test"]["metrics"]) == {
+            "accuracy", "precision", "recall", "f1", "confusion_matrix"
+        }

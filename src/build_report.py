@@ -6,9 +6,14 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import fmean, median, pstdev
+from typing import Any
 
-from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
-from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, CountVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 
 
 PROTECTED_NEGATIONS = {"not", "no", "nor", "never"}
@@ -184,3 +189,88 @@ def split_rows(
     ):
         raise AssertionError("textos repetidos atravessaram os conjuntos")
     return result
+
+
+def make_model(kind: str) -> Pipeline:
+    bow = CountVectorizer(
+        preprocessor=clean_text,
+        lowercase=False,
+        ngram_range=(1, 2),
+        min_df=2,
+        max_features=50_000,
+    )
+    if kind == "naive_bayes":
+        classifier = MultinomialNB()
+    elif kind == "logistic_regression":
+        classifier = LogisticRegression(max_iter=1_000, random_state=42)
+    else:
+        raise ValueError(f"modelo desconhecido: {kind}")
+    return Pipeline([("bow", bow), ("classifier", classifier)])
+
+
+def binary_metrics(y_true: list[int], y_pred: list[int]) -> dict[str, object]:
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        y_true, y_pred, average="binary", zero_division=0
+    )
+    return {
+        "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+        "precision": round(float(precision), 4),
+        "recall": round(float(recall), 4),
+        "f1": round(float(f1), 4),
+        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist(),
+    }
+
+
+def _xy(rows: list[tuple[str, int]]) -> tuple[list[str], list[int]]:
+    return [text for text, _ in rows], [label for _, label in rows]
+
+
+def _error_samples(
+    rows: list[tuple[str, int]], predictions: list[int], limit: int = 5
+) -> dict[str, list[dict[str, object]]]:
+    false_positives = []
+    false_negatives = []
+    for (text, expected), predicted in zip(rows, predictions, strict=True):
+        if expected == 0 and predicted == 1 and len(false_positives) < limit:
+            false_positives.append({"text": text[:700], "expected": 0, "predicted": 1})
+        if expected == 1 and predicted == 0 and len(false_negatives) < limit:
+            false_negatives.append({"text": text[:700], "expected": 1, "predicted": 0})
+    return {"false_positives": false_positives, "false_negatives": false_negatives}
+
+
+def run_models(
+    splits: dict[str, list[tuple[str, int]]]
+) -> tuple[dict[str, Pipeline], dict[str, object]]:
+    train_x, train_y = _xy(splits["train"])
+    validation_x, validation_y = _xy(splits["validation"])
+    test_x, test_y = _xy(splits["test"])
+    models: dict[str, Pipeline] = {}
+    results: dict[str, Any] = {}
+
+    for kind in ("naive_bayes", "logistic_regression"):
+        model = make_model(kind)
+        model.fit(train_x, train_y)
+        validation_predictions = model.predict(validation_x).tolist()
+        models[kind] = model
+        results[kind] = {
+            "validation": {"metrics": binary_metrics(validation_y, validation_predictions)},
+        }
+
+    selected = max(results, key=lambda name: results[name]["validation"]["metrics"]["f1"])
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    scores = cross_val_score(make_model(selected), train_x, train_y, cv=folds, scoring="f1")
+
+    for kind, model in models.items():
+        test_predictions = model.predict(test_x).tolist()
+        results[kind]["test"] = {
+            "metrics": binary_metrics(test_y, test_predictions),
+            "errors": _error_samples(splits["test"], test_predictions),
+        }
+
+    return models, {
+        "selected_model": selected,
+        "cross_validation_f1": [round(float(score), 4) for score in scores],
+        "cross_validation_mean": round(fmean(float(score) for score in scores), 4),
+        "cross_validation_std": round(pstdev(float(score) for score in scores), 4),
+        "models": results,
+    }
