@@ -15,7 +15,7 @@
     h2 { font-size:clamp(1.4rem,3vw,1.9rem); margin:0 0 1rem; }
     h3 { font-size:1.05rem; color:var(--muted); margin:1.5rem 0 .5rem; }
     p { color:var(--muted); max-width:70ch; }
-    .card { background:var(--panel); border:1px solid #263650; border-radius:18px; padding:1.25rem; }
+    .card { background:var(--panel); border:1px solid #263650; border-radius:18px; padding:1.25rem; transition:border-color .2s ease; }
     .metric { font-size:clamp(1.8rem,5vw,3.5rem); font-weight:750; }
     .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:1rem; }
     .bar-row { display:grid; grid-template-columns:9rem 1fr 3.5rem; align-items:center; gap:.75rem; margin:.4rem 0; }
@@ -38,11 +38,14 @@
     #csv-progress::-webkit-progress-value { transition:width .2s ease; }
     #csv-progress::-moz-progress-bar { transition:width .2s ease; }
     .card.busy { border-color:var(--accent); }
-    .card { transition:border-color .2s ease; }
     .metric-card { display:flex; flex-direction:column; gap:.25rem; }
     .metric-card strong { font-size:1.4rem; animation:metric-in .3s ease-out; }
     @keyframes metric-in { from { opacity:0; transform:translateY(.25rem); } to { opacity:1; transform:none; } }
-    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+    @media (prefers-reduced-motion: reduce) {
+      *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
+      #csv-progress::-webkit-progress-value,
+      #csv-progress::-moz-progress-bar { transition-duration:.01ms!important; }
+    }
   </style>
 </head>
 <body>
@@ -369,7 +372,14 @@
     controls["csv-file"].addEventListener("change", () => {
       selectedFile = controls["csv-file"].files[0] || null;
       controls["scan-labels"].disabled = true;
-      if (!selectedFile) return;
+      fillSelect(controls["positive-label"], []);
+      fillSelect(controls["negative-label"], []);
+      controls["analyze-csv"].disabled = true;
+      if (!selectedFile) {
+        fillSelect(controls["text-column"], []);
+        fillSelect(controls["label-column"], []);
+        return;
+      }
       Papa.parse(selectedFile, {
         header:true, preview:1,
         complete(results) {
