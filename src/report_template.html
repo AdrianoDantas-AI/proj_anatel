@@ -302,6 +302,39 @@
       </div>
     </section>
 
+    <section id="normalization" class="band">
+      <div class="rail">
+        <h2>Stemming e lematização</h2>
+        <p class="rail-note">Medido na validação, nunca no teste.</p>
+      </div>
+      <div class="col">
+        <p>
+          A pergunta é direta: colapsar formas de uma mesma palavra melhora a
+          classificação? Três corpora foram construídos a partir do mesmo split — sem
+          normalização, com stemming de Porter e com lematização — e cada um treinou os dois
+          modelos com o mesmo vetorizador.
+        </p>
+        <p>
+          A comparação acontece na validação e na validação cruzada sobre o treino. O
+          conjunto de teste não participa: escolher normalização olhando o teste seria
+          exatamente o vazamento que o resto do pipeline evita, e destruiria a única
+          consulta que o estudo se permite.
+        </p>
+        <p>
+          Nenhuma das duas implementações depende de biblioteca externa, porque o relatório
+          precisa continuar offline. O stemmer é o algoritmo de Porter em stdlib puro. O
+          lematizador é flexional, por regras mais uma tabela de irregulares: ele reduz
+          plural, tempo verbal e grau, mas não consulta léxico nem classe gramatical, então
+          é mais conservador que um lematizador do WordNet e não resolve casos como
+          <code>saw</code> para <code>see</code>.
+        </p>
+        <h3>Resultado por variante</h3>
+        <div class="scroller" id="normalization-comparison"></div>
+        <h3>Veredito</h3>
+        <p id="normalization-verdict"></p>
+      </div>
+    </section>
+
     <section id="errors" class="band">
       <div class="rail">
         <h2>Onde os modelos erram</h2>
@@ -813,6 +846,86 @@
       });
     }
 
+    const NORMALIZATION_LABELS = {
+      none:"Sem normalização", stemming:"Stemming de Porter", lemmatization:"Lematização por regras"
+    };
+
+    function renderNormalization(experiment) {
+      const table = document.createElement("table");
+      const caption = document.createElement("caption");
+      caption.textContent = "F1 na validação por variante, com o vocabulário que cada uma produz";
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      headRow.append(
+        cell("th", "Variante"), cell("th", "N-gramas com min_df=2"),
+        cell("th", "Features usadas"),
+        cell("th", "F1 Naive Bayes"), cell("th", "F1 Regressão Logística"),
+        cell("th", "F1 médio dos folds"), cell("th", "Desvio entre folds"),
+        cell("th", "Δ F1 vs. sem normalização")
+      );
+      head.append(headRow);
+      const body = document.createElement("tbody");
+      for (const [mode, variant] of Object.entries(experiment.variants)) {
+        const line = document.createElement("tr");
+        const delta = experiment.validation_f1_delta[mode];
+        const header = cell("th", NORMALIZATION_LABELS[mode] || mode);
+        header.scope = "row";
+        line.append(
+          header,
+          cell("td", number(variant.vocabulary_uncapped)),
+          cell("td", number(variant.vocabulary_used)),
+          cell("td", number(variant.models.naive_bayes.metrics.f1)),
+          cell("td", number(variant.models.logistic_regression.metrics.f1)),
+          cell("td", number(variant.cross_validation_mean)),
+          cell("td", number(variant.cross_validation_std)),
+          cell("td", mode === "none" ? "—" : `${delta > 0 ? "+" : ""}${number(delta)}`)
+        );
+        body.append(line);
+      }
+      table.append(caption, head, body);
+      document.getElementById("normalization-comparison").replaceChildren(table);
+
+      const deltas = experiment.validation_f1_delta;
+      const dispersion = number(experiment.fold_dispersion);
+      const verdict = experiment.meaningful_improvement.length
+        ? `O ganho de ${experiment.meaningful_improvement
+            .map(mode => NORMALIZATION_LABELS[mode] || mode).join(" e ")}`
+          + ` supera a dispersão de ${dispersion} entre os folds, então é tratado como real`
+          + " e não como sorte de amostragem."
+        : `Stemming move o F1 em ${number(deltas.stemming)} e a lematização em`
+          + ` ${number(deltas.lemmatization)}, contra uma dispersão de ${dispersion} entre os`
+          + " cinco folds do treino. Nenhuma das duas variações sai do ruído, então o"
+          + " pipeline segue sem normalização morfológica.";
+
+      // A direção do efeito sobre o vocabulário é medida, não presumida: com
+      // bigramas e min_df=2 ela pode crescer, e cravar "reduz" no texto seria
+      // contrariar a própria tabela acima.
+      const base = experiment.variants.none.vocabulary_uncapped;
+      const moved = ["stemming", "lemmatization"]
+        .map(mode => `${NORMALIZATION_LABELS[mode]} leva a ${number(experiment.variants[mode].vocabulary_uncapped)}`)
+        .join(" e ");
+      const grew = ["stemming", "lemmatization"]
+        .every(mode => experiment.variants[mode].vocabulary_uncapped > base);
+      const vocabNote = grew
+        ? ` Contra a intuição, colapsar formas não encolhe o espaço de features aqui:`
+          + ` o corpus sem normalização tem ${number(base)} n-gramas acima de min_df=2, e`
+          + ` ${moved}. Com bigramas, formas colapsadas fazem pares antes singulares`
+          + " alcançarem o limiar de duas ocorrências, e isso mais do que compensa a fusão"
+          + " de unigramas."
+        : ` O corpus sem normalização tem ${number(base)} n-gramas acima de min_df=2, e`
+          + ` ${moved}.`;
+      const capBinds = Object.values(experiment.variants)
+        .every(item => item.vocabulary_used < item.vocabulary_uncapped);
+      const capNote = capBinds
+        ? ` De todo modo o teto de ${number(experiment.variants.none.vocabulary_used)} features`
+          + " satura nas três variantes, então os três modelos treinam com o mesmo número de"
+          + " features, escolhidas por frequência: a diferença de vocabulário é cortada antes"
+          + " de alcançar o classificador. Mexer em normalização só mudaria o resultado junto"
+          + " de um teto maior ou de um min_df mais agressivo."
+        : "";
+      setText("normalization-verdict", verdict + vocabNote + capNote);
+    }
+
     function renderStoredReport(report) {
       setText("dataset-size", number(report.eda.rows));
       setText("class-balance",
@@ -916,6 +1029,8 @@
         ["Mediana de palavras — negativas", byClass.negative.median_words],
         ["Mediana de palavras — positivas", byClass.positive.median_words],
       ]);
+
+      if (report.normalization) renderNormalization(report.normalization);
 
       const matrices = document.getElementById("confusion-matrices");
       matrices.replaceChildren();

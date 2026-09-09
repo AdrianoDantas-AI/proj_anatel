@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from src import text_normalization
 from src.build_report import clean_text, encode_rows, load_csv
 
 
@@ -127,7 +129,7 @@ from src.build_report import render_report
 
 REQUIRED_SECTION_IDS = {
     "summary", "method", "pipeline", "eda", "leakage",
-    "models", "errors", "decisions", "conclusion", "local-csv"
+    "models", "normalization", "errors", "decisions", "conclusion", "local-csv"
 }
 
 
@@ -185,7 +187,7 @@ def test_real_template_contains_offline_csv_analyzer(tmp_path: Path) -> None:
     assert 'href="http' not in rendered
 
 
-from src.build_report import main
+from src.build_report import main, run_normalization_experiment
 
 
 def test_cli_generates_report_from_balanced_csv(tmp_path: Path) -> None:
@@ -270,3 +272,39 @@ def test_generated_report_renders_under_a_stubbed_dom(tmp_path: Path) -> None:
         [node, "tests/report_smoke.js", str(output)], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_normalization_experiment_never_touches_the_test_split() -> None:
+    train = [
+        *((f"excellent warm stories {index}", 1) for index in range(12)),
+        *((f"awful cold stories {index}", 0) for index in range(12)),
+    ]
+    validation = [
+        *((f"excellent warm validating {index}", 1) for index in range(5)),
+        *((f"awful cold validating {index}", 0) for index in range(5)),
+    ]
+    marker = "testonlyword"
+    test = [
+        *((f"excellent warm {marker} {index}", 1) for index in range(5)),
+        *((f"awful cold {marker} {index}", 0) for index in range(5)),
+    ]
+
+    experiment = run_normalization_experiment(
+        {"train": train, "validation": validation, "test": test}
+    )
+
+    assert experiment["evaluated_on"] == "validation"
+    assert set(experiment["variants"]) == {"none", "stemming", "lemmatization"}
+    # O marcador exclusivo do teste não pode ter alcançado nenhuma variante: o
+    # experimento escolhe normalização sem consultar o conjunto de teste.
+    assert marker not in json.dumps(experiment)
+    for variant in experiment["variants"].values():
+        assert variant["vocabulary_uncapped"] >= variant["vocabulary_used"]
+        assert set(variant["models"]) == {"naive_bayes", "logistic_regression"}
+    assert experiment["validation_f1_delta"]["none"] == 0.0
+
+
+def test_text_normalization_self_check_passes() -> None:
+    # O módulo carrega as asserções do stemmer e do lematizador em demo();
+    # aqui elas entram na suíte em vez de dependerem de execução manual.
+    text_normalization.demo()

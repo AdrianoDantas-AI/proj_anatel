@@ -67,6 +67,10 @@ for (const index of [1, 2, 3]) {
 }
 for (const fn of frames) fn();
 
+// `const REPORT` é binding lexical do script, não propriedade do contexto:
+// só é alcançável avaliando o identificador dentro do próprio contexto.
+const payload = vm.runInContext("REPORT", context);
+
 const text = id => byId.get(id).textContent;
 const checks = [
   ["dataset-size", () => /^[\d.]+$/.test(text("dataset-size"))],
@@ -84,8 +88,13 @@ const checks = [
   ["cross-validation", () => byId.get("cross-validation").children.length === 7],
   ["confusion-matrices", () => byId.get("confusion-matrices").children.length === 2],
   ["error-examples", () => Array.isArray(byId.get("error-examples").children)],
-  ["decision-list", () => byId.get("decision-list").children.length === 5],
+  // Contagens derivadas do payload, para não quebrarem a cada decisão nova.
+  ["decision-list", () =>
+    byId.get("decision-list").children.length === payload.decisions.length],
   ["report-meta", () => byId.get("report-meta").children.length === 5],
+  ["normalization-comparison", () =>
+    byId.get("normalization-comparison").children.length === 1],
+  ["normalization-verdict", () => byId.get("normalization-verdict").textContent.length > 0],
 ];
 let failed = 0;
 for (const [name, check] of checks) {
