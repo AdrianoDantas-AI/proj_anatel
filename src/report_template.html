@@ -29,6 +29,9 @@
     th { color:var(--muted); font-weight:600; }
     .axis-label { color:var(--muted); font-size:.85rem; margin:.25rem 0; }
     .sample { border-left:3px solid var(--accent); padding:.5rem .75rem; margin:.5rem 0; background:#0c1626; border-radius:0 8px 8px 0; }
+    .stack { display:grid; gap:1rem; margin-top:1rem; }
+    .stack .metric { font-size:1rem; font-weight:400; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .matrix { overflow-x:auto; }
     ul { color:var(--muted); }
     .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
     .sr-only:focus { position:fixed; width:auto; height:auto; clip:auto; top:1rem; left:1rem; padding:.75rem; background:var(--panel); z-index:10; }
@@ -69,6 +72,7 @@
           <div id="class-balance"></div>
         </div>
       </div>
+      <p class="axis-label" id="report-meta"></p>
     </section>
 
     <section id="method">
@@ -98,6 +102,8 @@
         Cada etapa produz estatísticas próprias (linhas malformadas, textos ausentes, grupos de
         duplicatas) que alimentam as seções de qualidade dos dados e de split abaixo.
       </p>
+      <h3>Antes e depois da deduplicação</h3>
+      <div class="grid" id="quality-stats"></div>
     </section>
 
     <section id="eda">
@@ -107,8 +113,10 @@
         de marcações HTML residuais e exemplos reais de cada classe, calculados antes do
         treinamento dos modelos.
       </p>
+      <h3>Distribuições e contagens observadas</h3>
+      <div class="grid" id="eda-stats"></div>
       <h3>Amostras de resenhas por classe</h3>
-      <div id="eda-samples"></div>
+      <div class="stack" id="eda-samples"></div>
     </section>
 
     <section id="leakage">
@@ -132,12 +140,12 @@
         estratificada de 5 folds sobre o conjunto de treino.
       </p>
       <h3>Métricas de validação e teste</h3>
-      <div id="model-comparison"></div>
+      <div class="grid" id="model-comparison"></div>
       <h3>Validação cruzada (5 folds, F1)</h3>
       <div id="cross-validation"></div>
       <h3>Matrizes de confusão</h3>
       <p class="axis-label">Linhas: real negativo / real positivo. Colunas: previsto negativo / previsto positivo.</p>
-      <div id="confusion-matrices"></div>
+      <div class="stack" id="confusion-matrices"></div>
     </section>
 
     <section id="errors">
@@ -148,7 +156,7 @@
         classificada como negativa) — ajudam a entender os limites do modelo além das métricas
         agregadas.
       </p>
-      <div id="error-examples"></div>
+      <div class="stack" id="error-examples"></div>
     </section>
 
     <section id="decisions">
@@ -168,6 +176,25 @@
         lineares, ajustar hiperparâmetros do vetorizador ou ampliar o conjunto de dados — mantendo
         sempre a divisão treino/validação/teste sem vazamento.
       </p>
+      <h3>Limitações conhecidas</h3>
+      <ul>
+        <li>Bag-of-words ignora a ordem das palavras além dos bigramas, então ironia e negações
+          distantes continuam difíceis.</li>
+        <li>O vocabulário está limitado a 50.000 termos com frequência mínima de 2 documentos;
+          termos raros e erros de digitação são descartados.</li>
+        <li>O corpus é apenas de resenhas de filmes em inglês, com rótulos binários e balanceados —
+          o desempenho não se transfere automaticamente para outros domínios ou idiomas.</li>
+        <li>A deduplicação é por texto exato: quase-duplicatas ainda podem repetir entre conjuntos.</li>
+      </ul>
+      <h3>Próximos passos acionáveis</h3>
+      <ul>
+        <li>Comparar TF-IDF e SVM linear com a mesma divisão congelada.</li>
+        <li>Ajustar <code>min_df</code>, <code>max_features</code> e a faixa de n-gramas por busca em
+          grade sobre a validação, sem tocar no teste.</li>
+        <li>Inspecionar os coeficientes mais influentes da regressão logística para validar o modelo
+          com quem conhece o domínio.</li>
+        <li>Avaliar deduplicação aproximada (por exemplo, MinHash) antes do split.</li>
+      </ul>
     </section>
 
     <section id="local-csv">
@@ -428,6 +455,150 @@
       } catch (error) { showError(error); }
       finally { localCsvCard.classList.remove("busy"); }
     });
+  </script>
+  <script>
+    function setText(id, value) {
+      document.getElementById(id).textContent = String(value);
+    }
+
+    function appendMetric(container, label, value) {
+      const card = document.createElement("article");
+      card.className = "card";
+      const heading = document.createElement("h3");
+      const metric = document.createElement("p");
+      heading.textContent = label;
+      metric.className = "metric";
+      metric.textContent = typeof value === "number" ? value.toLocaleString("pt-BR") : value;
+      card.append(heading, metric);
+      container.append(card);
+    }
+
+    function renderStoredReport(report) {
+      const modelLabels = {naive_bayes:"Naive Bayes", logistic_regression:"Regressão Logística"};
+      setText("dataset-size", report.eda.rows);
+      setText("class-balance",
+        `${report.eda.class_counts.positive} positivas · ${report.eda.class_counts.negative} negativas`);
+      setText("split-sizes",
+        `${report.splits.train} treino · ${report.splits.validation} validação · ${report.splits.test} teste`);
+
+      const edaSamples = document.getElementById("eda-samples");
+      for (const [label, samples] of Object.entries(report.eda.samples)) {
+        for (const sample of samples) appendMetric(edaSamples, `Amostra ${label}`, sample.slice(0, 500));
+      }
+
+      const comparison = document.getElementById("model-comparison");
+      for (const [name, result] of Object.entries(report.modeling.models)) {
+        for (const split of ["validation", "test"]) {
+          for (const [metric, value] of Object.entries(result[split].metrics)) {
+            if (metric !== "confusion_matrix") {
+              appendMetric(comparison, `${modelLabels[name]} · ${split} · ${metric}`, value);
+            }
+          }
+        }
+      }
+      setText("cross-validation",
+        `${report.modeling.cross_validation_f1.join(" · ")} · média ${report.modeling.cross_validation_mean} · desvio ${report.modeling.cross_validation_std}`);
+
+      const matrices = document.getElementById("confusion-matrices");
+      const errors = document.getElementById("error-examples");
+      for (const [name, result] of Object.entries(report.modeling.models)) {
+        appendMetric(matrices, `${modelLabels[name]} · TN/FP/FN/TP`, result.test.metrics.confusion_matrix.flat().join(" / "));
+        for (const [kind, samples] of Object.entries(result.test.errors)) {
+          for (const sample of samples) appendMetric(errors, `${modelLabels[name]} · ${kind}`, sample.text);
+        }
+      }
+
+      const decisionList = document.getElementById("decision-list");
+      decisionList.replaceChildren(...report.decisions.map(decision => {
+        const item = document.createElement("li");
+        item.textContent = decision;
+        return item;
+      }));
+    }
+
+    const MODEL_LABELS = {naive_bayes:"Naive Bayes", logistic_regression:"Regressão Logística"};
+    const ROW_LABELS = ["real negativo", "real positivo"];
+    const COLUMN_LABELS = ["previsto negativo", "previsto positivo"];
+
+    function cell(tag, text) {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      if (tag === "th" && text) node.scope = "col";
+      return node;
+    }
+
+    function appendConfusionTable(container, name, matrix) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "card matrix";
+      const table = document.createElement("table");
+      const caption = document.createElement("caption");
+      caption.textContent = `${MODEL_LABELS[name]} — matriz de confusão do conjunto de teste`;
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      headRow.append(cell("th", ""), ...COLUMN_LABELS.map(label => cell("th", label)));
+      head.append(headRow);
+      const body = document.createElement("tbody");
+      matrix.forEach((row, index) => {
+        const bodyRow = document.createElement("tr");
+        const header = cell("th", ROW_LABELS[index]);
+        header.scope = "row";
+        bodyRow.append(header, ...row.map(value => cell("td", value.toLocaleString("pt-BR"))));
+        body.append(bodyRow);
+      });
+      table.append(caption, head, body);
+      wrapper.append(table);
+      container.append(wrapper);
+    }
+
+    function appendStats(id, entries) {
+      const container = document.getElementById(id);
+      for (const [label, value] of entries) appendMetric(container, label, value);
+    }
+
+    function renderReportExtras(report) {
+      const meta = report.meta || {};
+      setText("report-meta",
+        `Gerado em ${meta.generated_at_utc} · fonte ${meta.source_name} · Python ${meta.python}`
+        + ` · scikit-learn ${meta.scikit_learn} · modelo selecionado:`
+        + ` ${MODEL_LABELS[report.modeling.selected_model] || report.modeling.selected_model}`);
+
+      const quality = report.quality || {};
+      appendStats("quality-stats", [
+        ["Linhas de origem no CSV", quality.source_rows],
+        ["Linhas válidas antes da deduplicação", report.eda.rows],
+        ["Linhas únicas após a deduplicação", quality.unique_rows],
+        ["Grupos de textos duplicados", quality.duplicate_groups],
+        ["Linhas duplicadas removidas", quality.duplicate_rows],
+        ["Linhas malformadas descartadas", quality.malformed_rows],
+        ["Linhas sem texto", quality.missing_text],
+        ["Linhas sem classe", quality.missing_label],
+      ]);
+
+      const characters = report.eda.characters, words = report.eda.words;
+      appendStats("eda-stats", [
+        ["Resenhas com HTML residual", report.eda.html_rows],
+        ["Caracteres — média", characters.mean],
+        ["Caracteres — mediana", characters.median],
+        ["Caracteres — P95", characters.p95],
+        ["Caracteres — mínimo / máximo", `${characters.min} / ${characters.max}`],
+        ["Palavras — média", words.mean],
+        ["Palavras — mediana", words.median],
+        ["Palavras — P95", words.p95],
+        ["Palavras — mínimo / máximo", `${words.min} / ${words.max}`],
+        ["Mediana de palavras — negativas", report.eda.by_class.negative.median_words],
+        ["Mediana de palavras — positivas", report.eda.by_class.positive.median_words],
+      ]);
+
+      const matrices = document.getElementById("confusion-matrices");
+      for (const [name, result] of Object.entries(report.modeling.models)) {
+        appendConfusionTable(matrices, name, result.test.metrics.confusion_matrix);
+      }
+    }
+
+    if (REPORT && REPORT.eda) {
+      renderStoredReport(REPORT);
+      renderReportExtras(REPORT);
+    }
   </script>
 </body>
 </html>

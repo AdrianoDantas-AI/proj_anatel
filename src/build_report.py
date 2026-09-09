@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import html
 import json
 import os
+import platform
 import re
+import sys
 import tempfile
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
+from importlib.metadata import version
 from pathlib import Path
 from statistics import fmean, median, pstdev
 from typing import Any
@@ -303,3 +308,98 @@ def render_report(
     except BaseException:
         Path(temporary_name).unlink(missing_ok=True)
         raise
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def build_analysis(
+    input_path: Path,
+    text_column: str,
+    label_column: str,
+    positive_label: str,
+    negative_label: str,
+) -> dict[str, object]:
+    raw_rows, load_stats = load_csv(input_path, text_column, label_column)
+    rows, quality_stats = encode_rows(
+        raw_rows, text_column, label_column, positive_label, negative_label
+    )
+    profile = profile_rows(rows)
+    unique_rows, duplicate_stats = deduplicate_rows(rows)
+    splits = split_rows(unique_rows)
+    _, model_results = run_models(splits)
+    return {
+        "meta": {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "source_name": input_path.name,
+            "python": platform.python_version(),
+            "scikit_learn": version("scikit-learn"),
+        },
+        "quality": {
+            "source_rows": len(raw_rows),
+            "unique_rows": len(unique_rows),
+            **load_stats,
+            **quality_stats,
+            **duplicate_stats,
+        },
+        "eda": profile,
+        "splits": {name: len(part) for name, part in splits.items()},
+        "modeling": model_results,
+        "decisions": [
+            "Bag of Words mantém o baseline simples e interpretável.",
+            "Negações são preservadas porque alteram o sentimento.",
+            "Stemming e lematização foram omitidos por serem opcionais.",
+            "Duplicatas foram removidas antes do split para evitar vazamento.",
+            "O teste foi consultado uma única vez após congelar as decisões.",
+        ],
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Gera o relatório HTML autocontido de análise de sentimentos."
+    )
+    parser.add_argument("--input", default="IMDB%20Dataset.csv")
+    parser.add_argument("--text-column", default="review")
+    parser.add_argument("--label-column", default="sentiment")
+    parser.add_argument("--positive-label", default="positive")
+    parser.add_argument("--negative-label", default="negative")
+    parser.add_argument("--output", default="reports/imdb_analysis.html")
+    arguments = parser.parse_args(argv)
+
+    try:
+        payload = build_analysis(
+            Path(arguments.input),
+            arguments.text_column,
+            arguments.label_column,
+            arguments.positive_label,
+            arguments.negative_label,
+        )
+        output_path = Path(arguments.output)
+        render_report(
+            payload,
+            REPO_ROOT / "src" / "report_template.html",
+            REPO_ROOT / "src" / "vendor" / "papaparse.min.js",
+            output_path,
+        )
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+
+    quality: Any = payload["quality"]
+    modeling: Any = payload["modeling"]
+    test_f1 = " · ".join(
+        f"{name} F1={result['test']['metrics']['f1']}"
+        for name, result in modeling["models"].items()
+    )
+    print(
+        f"Relatório gerado em {output_path} · "
+        f"{quality['source_rows']} linhas de origem · "
+        f"{quality['unique_rows']} linhas únicas · "
+        f"modelo selecionado: {modeling['selected_model']} · teste: {test_f1}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

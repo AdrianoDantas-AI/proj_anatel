@@ -180,3 +180,34 @@ def test_real_template_contains_offline_csv_analyzer(tmp_path: Path) -> None:
     assert "XMLHttpRequest" not in template_source
     assert 'src="http' not in rendered
     assert 'href="http' not in rendered
+
+
+from src.build_report import main
+
+
+def test_cli_generates_report_from_balanced_csv(tmp_path: Path) -> None:
+    rows = ["review,sentiment"]
+    rows.extend(f'"excellent warm story {index}",positive' for index in range(20))
+    rows.extend(f'"awful cold story {index}",negative' for index in range(20))
+    source = write_csv(tmp_path, "\n".join(rows) + "\n")
+    template = Path("src/report_template.html")
+    papa = Path("src/vendor/papaparse.min.js")
+    assert template.is_file() and papa.is_file()
+    output = tmp_path / "analysis.html"
+
+    exit_code = main([
+        "--input", str(source),
+        "--text-column", "review",
+        "--label-column", "sentiment",
+        "--positive-label", "positive",
+        "--negative-label", "negative",
+        "--output", str(output),
+    ])
+
+    assert exit_code == 0
+    rendered = output.read_text(encoding="utf-8")
+    assert "Naive Bayes" in rendered
+    assert "Regressão Logística" in rendered
+    assert '"train"' in rendered
+    assert '"validation"' in rendered
+    assert '"test"' in rendered
