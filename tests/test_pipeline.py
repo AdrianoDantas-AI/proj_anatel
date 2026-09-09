@@ -150,3 +150,33 @@ def test_rendered_report_is_self_contained(tmp_path: Path) -> None:
     assert 'src="http' not in rendered
     assert 'href="http' not in rendered
     assert all(f'id="{name}"' in rendered for name in REQUIRED_SECTION_IDS)
+
+
+def test_real_template_contains_offline_csv_analyzer(tmp_path: Path) -> None:
+    output = tmp_path / "real-report.html"
+    render_report(
+        {},
+        Path("src/report_template.html"),
+        Path("src/vendor/papaparse.min.js"),
+        output,
+    )
+    rendered = output.read_text(encoding="utf-8")
+
+    for identifier in (
+        "csv-file", "text-column", "label-column", "positive-label",
+        "negative-label", "scan-labels", "analyze-csv", "csv-progress",
+        "csv-error", "csv-results"
+    ):
+        assert f'id="{identifier}"' in rendered
+    assert "function summarizeRows" in rendered
+    assert "function runBrowserSelfCheck" in rendered
+    # The vendored parser carries an unused XHR path (its remote-URL streamer,
+    # never invoked since we always hand it a local File), so the no-network
+    # guarantee is asserted against the template's own source plus the
+    # absence of external URLs in the output, not against the rendered
+    # output that inlines the vendored parser.
+    template_source = Path("src/report_template.html").read_text(encoding="utf-8")
+    assert "fetch(" not in template_source
+    assert "XMLHttpRequest" not in template_source
+    assert 'src="http' not in rendered
+    assert 'href="http' not in rendered
