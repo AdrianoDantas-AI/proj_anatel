@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -211,3 +212,12 @@ def test_cli_generates_report_from_balanced_csv(tmp_path: Path) -> None:
     assert '"train"' in rendered
     assert '"validation"' in rendered
     assert '"test"' in rendered
+
+
+def test_template_controls_map_declares_every_used_id() -> None:
+    source = Path("src/report_template.html").read_text(encoding="utf-8")
+    block = re.search(r"const controls = Object\.fromEntries\(\[(.*?)\]", source, re.S)
+    assert block is not None
+    declared = set(re.findall(r'"([^"]+)"', block.group(1)))
+    used = set(re.findall(r'controls\["([^"]+)"\]', source))
+    assert used <= declared, f"ids usados sem declaração no mapa controls: {sorted(used - declared)}"

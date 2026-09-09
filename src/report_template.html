@@ -64,12 +64,19 @@
       </p>
       <div class="grid">
         <div class="card">
-          <h3>Total de linhas analisadas</h3>
+          <h3>Linhas válidas no CSV de origem</h3>
           <div class="metric" id="dataset-size"></div>
+          <p class="axis-label">Contagem antes da deduplicação, base da análise exploratória.</p>
+        </div>
+        <div class="card">
+          <h3>Linhas únicas após a deduplicação</h3>
+          <div class="metric" id="unique-size"></div>
+          <p class="axis-label">Base efetivamente dividida em treino, validação e teste.</p>
         </div>
         <div class="card">
           <h3>Balanceamento entre classes</h3>
           <div id="class-balance"></div>
+          <div id="class-balance-bars"></div>
         </div>
       </div>
       <p class="axis-label" id="report-meta"></p>
@@ -129,6 +136,7 @@
       </p>
       <h3>Tamanho de cada conjunto</h3>
       <div id="split-sizes"></div>
+      <div id="split-sizes-bars"></div>
     </section>
 
     <section id="models">
@@ -151,10 +159,11 @@
     <section id="errors">
       <h2>Onde os modelos erram</h2>
       <p>
-        Exemplos reais do conjunto de teste em que o modelo selecionado errou — falsos positivos
+        Exemplos reais do conjunto de teste em que os modelos erraram — falsos positivos
         (resenha negativa classificada como positiva) e falsos negativos (resenha positiva
-        classificada como negativa) — ajudam a entender os limites do modelo além das métricas
-        agregadas.
+        classificada como negativa) — ajudam a entender os limites dos modelos além das métricas
+        agregadas. Os dois modelos são mostrados, e cada exemplo indica no título a qual deles
+        pertence.
       </p>
       <div class="stack" id="error-examples"></div>
     </section>
@@ -354,7 +363,7 @@
 
     const controls = Object.fromEntries([
       "csv-file", "text-column", "label-column", "positive-label", "negative-label",
-      "scan-labels", "analyze-csv", "csv-error", "csv-results"
+      "scan-labels", "analyze-csv", "csv-progress", "csv-error", "csv-results"
     ].map(id => [id, document.getElementById(id)]));
     let selectedFile = null;
     const localCsvCard = controls["csv-file"].closest(".card");
@@ -474,7 +483,6 @@
     }
 
     function renderStoredReport(report) {
-      const modelLabels = {naive_bayes:"Naive Bayes", logistic_regression:"Regressão Logística"};
       setText("dataset-size", report.eda.rows);
       setText("class-balance",
         `${report.eda.class_counts.positive} positivas · ${report.eda.class_counts.negative} negativas`);
@@ -491,7 +499,7 @@
         for (const split of ["validation", "test"]) {
           for (const [metric, value] of Object.entries(result[split].metrics)) {
             if (metric !== "confusion_matrix") {
-              appendMetric(comparison, `${modelLabels[name]} · ${split} · ${metric}`, value);
+              appendMetric(comparison, `${MODEL_LABELS[name]} · ${split} · ${metric}`, value);
             }
           }
         }
@@ -499,12 +507,10 @@
       setText("cross-validation",
         `${report.modeling.cross_validation_f1.join(" · ")} · média ${report.modeling.cross_validation_mean} · desvio ${report.modeling.cross_validation_std}`);
 
-      const matrices = document.getElementById("confusion-matrices");
       const errors = document.getElementById("error-examples");
       for (const [name, result] of Object.entries(report.modeling.models)) {
-        appendMetric(matrices, `${modelLabels[name]} · TN/FP/FN/TP`, result.test.metrics.confusion_matrix.flat().join(" / "));
         for (const [kind, samples] of Object.entries(result.test.errors)) {
-          for (const sample of samples) appendMetric(errors, `${modelLabels[name]} · ${kind}`, sample.text);
+          for (const sample of samples) appendMetric(errors, `${MODEL_LABELS[name]} · ${kind}`, sample.text);
         }
       }
 
@@ -550,6 +556,24 @@
       container.append(wrapper);
     }
 
+    function appendBar(container, label, value, total, tone) {
+      const share = total ? value / total * 100 : 0;
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const track = document.createElement("div");
+      track.className = "bar-track";
+      const fill = document.createElement("div");
+      fill.className = tone ? `bar-fill ${tone}` : "bar-fill";
+      fill.style.width = `${share.toFixed(1)}%`;
+      track.append(fill);
+      const count = document.createElement("span");
+      count.textContent = `${share.toFixed(1)}%`;
+      row.append(name, track, count);
+      container.append(row);
+    }
+
     function appendStats(id, entries) {
       const container = document.getElementById(id);
       for (const [label, value] of entries) appendMetric(container, label, value);
@@ -563,6 +587,20 @@
         + ` ${MODEL_LABELS[report.modeling.selected_model] || report.modeling.selected_model}`);
 
       const quality = report.quality || {};
+      setText("unique-size", quality.unique_rows);
+
+      const counts = report.eda.class_counts;
+      const classTotal = counts.positive + counts.negative;
+      const balanceBars = document.getElementById("class-balance-bars");
+      appendBar(balanceBars, "positivas", counts.positive, classTotal, "positive");
+      appendBar(balanceBars, "negativas", counts.negative, classTotal, "negative");
+
+      const splitBars = document.getElementById("split-sizes-bars");
+      const splitTotal = report.splits.train + report.splits.validation + report.splits.test;
+      for (const [key, label] of [["train", "treino"], ["validation", "validação"], ["test", "teste"]]) {
+        appendBar(splitBars, label, report.splits[key], splitTotal);
+      }
+
       appendStats("quality-stats", [
         ["Linhas de origem no CSV", quality.source_rows],
         ["Linhas válidas antes da deduplicação", report.eda.rows],
