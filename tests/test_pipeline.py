@@ -117,3 +117,36 @@ def test_models_use_train_vocabulary_and_return_required_metrics() -> None:
         assert set(model_result["test"]["metrics"]) == {
             "accuracy", "precision", "recall", "f1", "confusion_matrix"
         }
+
+
+from src.build_report import render_report
+
+
+REQUIRED_SECTION_IDS = {
+    "summary", "method", "pipeline", "eda", "leakage",
+    "models", "errors", "decisions", "conclusion", "local-csv"
+}
+
+
+def test_rendered_report_is_self_contained(tmp_path: Path) -> None:
+    template = tmp_path / "template.html"
+    template.write_text(
+        '<!doctype html><html><body><script>__PAPA_PARSE_SOURCE__</script>'
+        '<script>const REPORT = __REPORT_DATA__;</script>'
+        + "".join(f'<section id="{name}"></section>' for name in REQUIRED_SECTION_IDS)
+        + "</body></html>",
+        encoding="utf-8",
+    )
+    papa = tmp_path / "papa.js"
+    papa.write_text("window.Papa = {};", encoding="utf-8")
+    output = tmp_path / "report.html"
+
+    render_report({"title": "IMDb </script> safe"}, template, papa, output)
+    rendered = output.read_text(encoding="utf-8")
+
+    assert "__REPORT_DATA__" not in rendered
+    assert "__PAPA_PARSE_SOURCE__" not in rendered
+    assert "<\\/script>" in rendered
+    assert 'src="http' not in rendered
+    assert 'href="http' not in rendered
+    assert all(f'id="{name}"' in rendered for name in REQUIRED_SECTION_IDS)

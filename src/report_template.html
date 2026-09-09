@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Análise de Sentimentos IMDb</title>
+  <style>
+    :root { color-scheme: dark; --bg:#08111f; --panel:#111d30; --text:#edf4ff; --muted:#9fb0c8; --positive:#39d98a; --negative:#ff6b78; --accent:#65a8ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,sans-serif; }
+    main { width:min(1120px,92vw); margin:auto; }
+    section { padding:4rem 0; border-top:1px solid #1c2b45; }
+    section:first-child { border-top:none; }
+    h1 { font-size:clamp(2rem,5vw,3rem); margin:0 0 .5rem; }
+    h2 { font-size:clamp(1.4rem,3vw,1.9rem); margin:0 0 1rem; }
+    h3 { font-size:1.05rem; color:var(--muted); margin:1.5rem 0 .5rem; }
+    p { color:var(--muted); max-width:70ch; }
+    .card { background:var(--panel); border:1px solid #263650; border-radius:18px; padding:1.25rem; }
+    .metric { font-size:clamp(1.8rem,5vw,3.5rem); font-weight:750; }
+    .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:1rem; }
+    .bar-row { display:grid; grid-template-columns:9rem 1fr 3.5rem; align-items:center; gap:.75rem; margin:.4rem 0; }
+    .bar-track { background:#0c1626; border-radius:999px; overflow:hidden; height:.8rem; }
+    .bar-fill { height:100%; border-radius:999px; background:var(--accent); }
+    .bar-fill.positive { background:var(--positive); }
+    .bar-fill.negative { background:var(--negative); }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; }
+    caption { caption-side:top; text-align:left; color:var(--muted); margin-bottom:.5rem; }
+    th, td { text-align:left; padding:.5rem .75rem; border-bottom:1px solid #263650; }
+    th { color:var(--muted); font-weight:600; }
+    .axis-label { color:var(--muted); font-size:.85rem; margin:.25rem 0; }
+    .sample { border-left:3px solid var(--accent); padding:.5rem .75rem; margin:.5rem 0; background:#0c1626; border-radius:0 8px 8px 0; }
+    ul { color:var(--muted); }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+    .sr-only:focus { position:fixed; width:auto; height:auto; clip:auto; top:1rem; left:1rem; padding:.75rem; background:var(--panel); z-index:10; }
+    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+  </style>
+</head>
+<body>
+  <a class="sr-only" href="#summary">Ir para o conteúdo</a>
+  <main>
+    <section id="summary">
+      <h1>Análise de Sentimentos IMDb</h1>
+      <p>
+        Este relatório é um único arquivo HTML autocontido: nenhum script externo é carregado,
+        nenhuma rede é acessada e todos os dados vêm do payload embutido abaixo. Ele resume o
+        conjunto de resenhas do IMDb, os modelos treinados e as decisões técnicas por trás do
+        pipeline em <code>src/build_report.py</code>.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>Total de linhas analisadas</h3>
+          <div class="metric" id="dataset-size"></div>
+        </div>
+        <div class="card">
+          <h3>Balanceamento entre classes</h3>
+          <div id="class-balance"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="method">
+      <h2>Objetivo e metodologia</h2>
+      <p>
+        O objetivo é classificar resenhas de filmes do IMDb como positivas ou negativas usando
+        modelos clássicos de aprendizado supervisionado (Naive Bayes multinomial e regressão
+        logística) sobre representações bag-of-words. Nenhum modelo de linguagem pré-treinado é
+        usado; tudo roda offline a partir de um CSV local.
+      </p>
+      <p>
+        A metodologia segue quatro etapas: limpeza de texto, divisão estratificada em
+        treino/validação/teste, treino dos dois modelos com o mesmo vocabulário e comparação por
+        métricas de classificação binária (acurácia, precisão, revocação e F1).
+      </p>
+    </section>
+
+    <section id="pipeline">
+      <h2>Do CSV à decisão</h2>
+      <p>
+        O pipeline lê o CSV informado, valida as colunas de texto e rótulo, remove HTML e
+        pontuação preservando negações ("not", "no", "nor", "never"), descarta linhas vazias ou
+        malformadas, remove duplicatas exatas (rejeitando duplicatas com rótulos conflitantes) e
+        só então divide os dados em treino, validação e teste de forma estratificada.
+      </p>
+      <p>
+        Cada etapa produz estatísticas próprias (linhas malformadas, textos ausentes, grupos de
+        duplicatas) que alimentam as seções de qualidade dos dados e de split abaixo.
+      </p>
+    </section>
+
+    <section id="eda">
+      <h2>Qualidade dos dados</h2>
+      <p>
+        Estatísticas descritivas sobre o tamanho das resenhas (em caracteres e palavras), presença
+        de marcações HTML residuais e exemplos reais de cada classe, calculados antes do
+        treinamento dos modelos.
+      </p>
+      <h3>Amostras de resenhas por classe</h3>
+      <div id="eda-samples"></div>
+    </section>
+
+    <section id="leakage">
+      <h2>Split e prevenção de vazamento</h2>
+      <p>
+        Os dados são divididos em treino (70%), validação (15%) e teste (15%) de forma
+        estratificada por classe, com uma verificação explícita de que nenhum texto aparece em
+        mais de um conjunto. O vocabulário do vetorizador é ajustado apenas no conjunto de treino,
+        para que nenhuma palavra exclusiva de validação ou teste vaze para o modelo.
+      </p>
+      <h3>Tamanho de cada conjunto</h3>
+      <div id="split-sizes"></div>
+    </section>
+
+    <section id="models">
+      <h2>Comparação dos modelos</h2>
+      <p>
+        Naive Bayes multinomial e regressão logística são treinados com o mesmo vocabulário
+        bag-of-words (unigramas e bigramas) e comparados no conjunto de validação. O modelo com
+        melhor F1 de validação é selecionado e sua estabilidade é confirmada com validação cruzada
+        estratificada de 5 folds sobre o conjunto de treino.
+      </p>
+      <h3>Métricas de validação e teste</h3>
+      <div id="model-comparison"></div>
+      <h3>Validação cruzada (5 folds, F1)</h3>
+      <div id="cross-validation"></div>
+      <h3>Matrizes de confusão</h3>
+      <p class="axis-label">Linhas: real negativo / real positivo. Colunas: previsto negativo / previsto positivo.</p>
+      <div id="confusion-matrices"></div>
+    </section>
+
+    <section id="errors">
+      <h2>Onde os modelos erram</h2>
+      <p>
+        Exemplos reais do conjunto de teste em que o modelo selecionado errou — falsos positivos
+        (resenha negativa classificada como positiva) e falsos negativos (resenha positiva
+        classificada como negativa) — ajudam a entender os limites do modelo além das métricas
+        agregadas.
+      </p>
+      <div id="error-examples"></div>
+    </section>
+
+    <section id="decisions">
+      <h2>Decisões técnicas</h2>
+      <p>
+        Principais decisões de projeto que moldaram este pipeline, registradas junto com os
+        resultados para que continuem rastreáveis mesmo fora do repositório de código.
+      </p>
+      <ul id="decision-list"></ul>
+    </section>
+
+    <section id="conclusion">
+      <h2>Conclusões e próximos passos</h2>
+      <p>
+        O modelo selecionado atinge desempenho competitivo com uma abordagem simples e totalmente
+        interpretável. Possíveis próximos passos incluem experimentar outros classificadores
+        lineares, ajustar hiperparâmetros do vetorizador ou ampliar o conjunto de dados — mantendo
+        sempre a divisão treino/validação/teste sem vazamento.
+      </p>
+    </section>
+
+    <section id="local-csv">
+      <h2>Analise outro CSV localmente</h2>
+      <p>
+        Os dados de um CSV escolhido no navegador nesta seção permanecem apenas nesta máquina:
+        eles nunca são enviados a um servidor e nunca treinam ou alimentam um modelo — servem
+        somente para uma análise exploratória (EDA) local.
+      </p>
+    </section>
+  </main>
+  <script>__PAPA_PARSE_SOURCE__</script>
+  <script>const REPORT = __REPORT_DATA__;</script>
+</body>
+</html>

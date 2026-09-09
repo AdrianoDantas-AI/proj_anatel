@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 import html
+import json
+import os
 import re
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import fmean, median, pstdev
@@ -274,3 +277,29 @@ def run_models(
         "cross_validation_std": round(pstdev(float(score) for score in scores), 4),
         "models": results,
     }
+
+
+def render_report(
+    payload: dict[str, object],
+    template_path: Path,
+    papa_path: Path,
+    output_path: Path,
+) -> None:
+    template = template_path.read_text(encoding="utf-8")
+    if template.count("__REPORT_DATA__") != 1 or template.count("__PAPA_PARSE_SOURCE__") != 1:
+        raise ValueError("template deve conter cada placeholder exatamente uma vez")
+    safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    rendered = template.replace(
+        "__PAPA_PARSE_SOURCE__", papa_path.read_text(encoding="utf-8")
+    ).replace("__REPORT_DATA__", safe_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=output_path.parent, suffix=".html", text=True
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            handle.write(rendered)
+        os.replace(temporary_name, output_path)
+    except BaseException:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
