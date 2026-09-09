@@ -41,3 +41,45 @@ def test_rejects_missing_columns_and_unexpected_labels(tmp_path: Path) -> None:
     raw_rows, _ = load_csv(path, "text", "label")
     with pytest.raises(ValueError, match="rótulos inesperados: maybe"):
         encode_rows(raw_rows, "text", "label", "positive", "negative")
+
+
+from src.build_report import deduplicate_rows, profile_rows, split_rows
+
+
+def make_balanced_rows(count_per_class: int = 20) -> list[tuple[str, int]]:
+    return [
+        *((f"good movie number {index}", 1) for index in range(count_per_class)),
+        *((f"bad movie number {index}", 0) for index in range(count_per_class)),
+    ]
+
+
+def test_profiles_and_deduplicates_before_split() -> None:
+    rows = make_balanced_rows()
+    rows.extend([rows[0], rows[-1]])
+
+    profile = profile_rows(rows)
+    unique_rows, duplicate_stats = deduplicate_rows(rows)
+    splits = split_rows(unique_rows)
+
+    assert profile["rows"] == 42
+    assert profile["class_counts"] == {"negative": 21, "positive": 21}
+    assert profile["by_class"]["negative"]["rows"] == 21
+    assert profile["by_class"]["positive"]["rows"] == 21
+    assert len(profile["samples"]["negative"]) == 3
+    assert len(profile["samples"]["positive"]) == 3
+    assert duplicate_stats == {"duplicate_groups": 2, "duplicate_rows": 2}
+    assert {name: len(part) for name, part in splits.items()} == {
+        "train": 28,
+        "validation": 6,
+        "test": 6,
+    }
+    text_sets = {name: {text for text, _ in part} for name, part in splits.items()}
+    assert text_sets["train"].isdisjoint(text_sets["validation"])
+    assert text_sets["train"].isdisjoint(text_sets["test"])
+    assert text_sets["validation"].isdisjoint(text_sets["test"])
+    assert all(sum(label for _, label in part) == len(part) // 2 for part in splits.values())
+
+
+def test_rejects_duplicate_text_with_conflicting_labels() -> None:
+    with pytest.raises(ValueError, match="rótulos conflitantes"):
+        deduplicate_rows([("same review", 1), ("same review", 0)])
